@@ -4,7 +4,7 @@ from django.http import JsonResponse, HttpResponseBadRequest, HttpResponse
 from .models import Service, Booking, Professional
 from django.utils import timezone
 from django.db import transaction
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, date
 from django.views.decorators.http import require_POST
 from django.template.loader import render_to_string
 from .forms import QuickBookingForm
@@ -18,46 +18,34 @@ SLOT_INTERVAL_MIN = 15
 
 def parse_day_to_date(day_str):
     """
-    Aceita:
-     - '2025-11-03' (ISO)
-     - '3 de Novembro de 2025' (Português) -> fallback
-    Retorna uma datetime.date
+    Aceita ISO (YYYY-MM-DD) ou formato tipo '3 de Novembro de 2025'.
+    Retorna datetime.date
     """
-    # 1) tenta ISO (YYYY-MM-DD)
     try:
         return datetime.fromisoformat(day_str).date()
     except Exception:
         pass
 
-    # 2) tenta formato '3 de Novembro de 2025' (ou '3 Novembro 2025')
     meses = {
         'janeiro':1,'fevereiro':2,'março':3,'marco':3,'abril':4,'maio':5,'junho':6,
         'julho':7,'agosto':8,'setembro':9,'outubro':10,'novembro':11,'dezembro':12
     }
     try:
         parts = day_str.strip().lower().replace('  ',' ').split()
-        day = None; month = None; year = None
+        day_v = None; month = None; year = None
         for token in parts:
-            if token.isdigit() and len(token) <= 2 and day is None:
-                day = int(token)
+            if token.isdigit() and len(token) <= 2 and day_v is None:
+                day_v = int(token)
             if token.isdigit() and len(token) == 4:
                 year = int(token)
             if token in meses and month is None:
                 month = meses[token]
-        if day and month and year:
-            from datetime import date
-            return date(year, month, day)
+        if day_v and month and year:
+            return date(year, month, day_v)
     except Exception:
         pass
 
-    # se não conseguiu, levanta ValueError
     raise ValueError(f"Formato de data inválido: {day_str}")
-
-def index(request):
-    services = Service.objects.all()
-    prof = Professional.objects.first()
-    days = [ (timezone.localdate() + timedelta(days=i)) for i in range(0, 14) ]
-    return render(request, 'agendamentos/index.html', {'services': services, 'professional': prof, 'days': days})
 
 def generate_slots_for_day(day_date, service_duration_min):
     slots = []
@@ -75,10 +63,29 @@ def is_conflicting(professional, start_dt, end_dt):
         end_datetime__gt=start_dt
     ).exists()
 
+def index(request):
+    services = Service.objects.all()
+    prof = Professional.objects.first()
+    # Próximos 14 dias (a partir de hoje)
+    raw_days = [ (timezone.localdate() + timedelta(days=i)) for i in range(0, 14) ]
+
+    # Para cada dia, contamos quantos agendamentos existem para o profissional
+    days_info = []
+    for d in raw_days:
+        day_start = datetime.combine(d, time(0,0))
+        day_end = datetime.combine(d, time(23,59,59))
+        count = 0
+        if prof:
+            count = Booking.objects.filter(professional=prof, start_datetime__gte=day_start, start_datetime__lte=day_end).count()
+        days_info.append({'date': d, 'iso': d.isoformat(), 'count': count})
+
+    return render(request, 'agendamentos/index.html', {
+        'services': services,
+        'professional': prof,
+        'days_info': days_info,
+    })
+
 def slots_for_day(request):
-    """
-    Retorna partial HTML com os slots. Protegido por try/except geral para evitar hangs.
-    """
     try:
         day = request.GET.get('day')
         service_id = request.GET.get('service_id')
@@ -86,7 +93,6 @@ def slots_for_day(request):
         if not (day and service_id and prof_id):
             return HttpResponseBadRequest('Parâmetros faltando')
 
-        # parse da data com fallback robusto
         try:
             day_date = parse_day_to_date(day)
         except ValueError:
@@ -117,7 +123,6 @@ def slots_for_day(request):
         html = render_to_string('agendamentos/partials/slots.html', {'slots_info': slots_info, 'service': service, 'request': request})
         return HttpResponse(html)
     except Exception as e:
-        # registra trace no console (útil em Render logs). Não deixa hang.
         print("ERROR in slots_for_day:", str(e))
         traceback.print_exc()
         return HttpResponse("Erro interno ao obter horários.", status=500)
@@ -125,7 +130,6 @@ def slots_for_day(request):
 @require_POST
 @csrf_exempt
 def book_appointment(request):
-    # aceita form-data ou json
     import json
     try:
         if request.content_type == 'application/json':
@@ -186,11 +190,6 @@ def book_appointment(request):
 @require_POST
 @csrf_exempt
 def notify_whatsapp(request):
-    """
-    Endpoint de simulação de notificação WhatsApp.
-    Payload esperado (JSON): {"booking_id": 1, "to": "professional" or "client"}
-    Apenas registra no log e retorna sucesso.
-    """
     import json
     try:
         payload = json.loads(request.body)
@@ -198,6 +197,5 @@ def notify_whatsapp(request):
         payload = request.POST.dict()
     booking_id = payload.get('booking_id')
     to = payload.get('to', 'professional')
-    # Simulação: registrar no terminal (Render logs mostrariam isso)
     print(f"[SIMULATED-WHATSAPP] Notify {to} about booking {booking_id}")
     return JsonResponse({'status':'ok','msg':'simulated'})
