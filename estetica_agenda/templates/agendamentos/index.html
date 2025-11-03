@@ -25,7 +25,7 @@
         <button class="p-3 rounded-lg border text-sm text-center flex flex-col items-center justify-center"
                 data-iso="{{ d|date:'Y-m-d' }}"
                 onclick="fetchSlots(this.dataset.iso, {{ services.0.id }}, {{ professional.id }})"
-                title="{{ d|date:'l, d \\de F \\de Y' }}">
+                title="{{ d|date:'l, d F Y' }}">
           <div class="text-xs text-gray-400">{{ d|date:"D" }}</div>
           <div class="font-medium">{{ d|date:"d" }}</div>
         </button>
@@ -42,18 +42,34 @@
 </div>
 
 <script>
+/*
+  fetchSlots com timeout: se o servidor ficar preso > 8s, cancelamos e mostramos mensagem.
+*/
 async function fetchSlots(day, serviceId, profId){
-  // day já é ISO (YYYY-MM-DD) por causa do data-iso ou date filter
   const url = `/slots/?day=${encodeURIComponent(day)}&service_id=${serviceId}&professional_id=${profId}`;
-  const resp = await fetch(url);
-  if(resp.status === 200){
-    const html = await resp.text();
-    document.getElementById('slots').innerHTML = html;
-  } else {
-    // mensagens simples de erro para usuário (melhorar se quiser)
-    const text = await resp.text();
-    document.getElementById('slots').innerHTML = `<div class="text-red-600">Erro ao carregar horários: ${resp.status}</div>`;
-    console.error('Erro slots:', resp.status, text);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000); // 8 segundos
+
+  try {
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if(resp.status === 200){
+      const html = await resp.text();
+      document.getElementById('slots').innerHTML = html;
+    } else {
+      const text = await resp.text();
+      document.getElementById('slots').innerHTML = `<div class="text-red-600">Erro ao carregar horários (status ${resp.status}).</div>`;
+      console.error('Erro slots:', resp.status, text);
+    }
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      document.getElementById('slots').innerHTML = `<div class="text-red-600">Tempo de espera esgotado. Tente novamente.</div>`;
+    } else {
+      document.getElementById('slots').innerHTML = `<div class="text-red-600">Erro ao carregar horários: ${err.message}</div>`;
+    }
+    console.error('fetchSlots error', err);
   }
 }
 </script>
