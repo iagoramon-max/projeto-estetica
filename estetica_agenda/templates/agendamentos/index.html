@@ -11,24 +11,30 @@
           <div class="text-xs text-gray-500">{{ s.duration_min }} min • R$ {{ s.price }}</div>
         </div>
         <input type="radio" name="service" value="{{ s.id }}" {% if forloop.first %}checked{% endif %}
-               onclick="fetchSlots('{{ days.0|date:'Y-m-d' }}', {{ s.id }}, {{ professional.id }})">
+               onclick="fetchSlots('{{ days_info.0.iso }}', {{ s.id }}, {{ professional.id }})">
       </label>
       {% endfor %}
     </div>
   </section>
 
-  <!-- Calendário em grade 7 colunas -->
+  <!-- Calendário em grade 7 colunas com badge -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Escolha o dia</h2>
     <div class="grid grid-cols-7 gap-2">
-      {% for d in days %}
-        <button class="p-3 rounded-lg border text-sm text-center flex flex-col items-center justify-center"
-                data-iso="{{ d|date:'Y-m-d' }}"
+      {% for d in days_info %}
+        {% with dt=d.date %}
+        <button class="p-2 rounded-lg border text-sm text-center flex flex-col items-center justify-center relative"
+                data-iso="{{ d.iso }}"
                 onclick="fetchSlots(this.dataset.iso, {{ services.0.id }}, {{ professional.id }})"
-                title="{{ d|date:'l, d F Y' }}">
-          <div class="text-xs text-gray-400">{{ d|date:"D" }}</div>
-          <div class="font-medium">{{ d|date:"d" }}</div>
+                title="{{ d.date|date:'l, d F Y' }}">
+          <div class="text-xs text-gray-400">{{ d.date|date:"D" }}</div>
+          <div class="font-medium">{{ d.date|date:"d" }}</div>
+
+          {% if d.count > 0 %}
+            <span class="absolute -top-2 -right-2 bg-pink-600 text-white text-xs px-2 py-0.5 rounded-full">{{ d.count }}</span>
+          {% endif %}
         </button>
+        {% endwith %}
       {% endfor %}
     </div>
   </section>
@@ -42,14 +48,11 @@
 </div>
 
 <script>
-/*
-  fetchSlots com timeout: se o servidor ficar preso > 8s, cancelamos e mostramos mensagem.
-*/
+/* fetchSlots com timeout de 8s */
 async function fetchSlots(day, serviceId, profId){
   const url = `/slots/?day=${encodeURIComponent(day)}&service_id=${serviceId}&professional_id=${profId}`;
-
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000); // 8 segundos
+  const timeout = setTimeout(() => controller.abort(), 8000);
 
   try {
     const resp = await fetch(url, { signal: controller.signal });
