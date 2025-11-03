@@ -45,10 +45,22 @@
 </div>
 
 <script>
-/* Utilitários de DOM e estado */
-let selectedServiceId = document.querySelector('.service-radio:checked')?.value || null;
-let selectedDayIso = null;
-let professionalId = {{ professional.id if professional else 'null' }};
+/* Estado global (exposto em window para outros scripts) */
+window.selectedServiceId = null;
+window.selectedDayIso = null;
+
+/* Inicializa selectedServiceId com o radio checado (se houver) */
+const checkedService = document.querySelector('.service-radio:checked');
+if (checkedService) {
+  window.selectedServiceId = checkedService.value;
+}
+
+/* professionalId (usar tag if para evitar expressão inválida no template) */
+{% if professional %}
+  const professionalId = {{ professional.id }};
+{% else %}
+  const professionalId = null;
+{% endif %}
 
 /* Marcar visualmente o serviço selecionado */
 document.querySelectorAll('.service-item').forEach(item=>{
@@ -57,9 +69,9 @@ document.querySelectorAll('.service-item').forEach(item=>{
     item.classList.add('ring-2','ring-pink-300');
     const radio = item.querySelector('.service-radio');
     radio.checked = true;
-    selectedServiceId = radio.value;
+    window.selectedServiceId = radio.value;
     // se já tiver dia selecionado, recarrega horários
-    if(selectedDayIso) fetchSlots(selectedDayIso, selectedServiceId, professionalId);
+    if(window.selectedDayIso) fetchSlots(window.selectedDayIso, window.selectedServiceId, professionalId);
   });
 });
 
@@ -69,13 +81,13 @@ document.querySelectorAll('.day-btn').forEach(btn=>{
     // remover seleção anterior
     document.querySelectorAll('.day-btn').forEach(b=>b.classList.remove('border-pink-600','bg-pink-50'));
     btn.classList.add('border-pink-600','bg-pink-50');
-    selectedDayIso = btn.dataset.iso;
+    window.selectedDayIso = btn.dataset.iso;
     // busca slots
-    if(!selectedServiceId){
+    if(!window.selectedServiceId){
       alert('Selecione um serviço primeiro');
       return;
     }
-    fetchSlots(selectedDayIso, selectedServiceId, professionalId);
+    fetchSlots(window.selectedDayIso, window.selectedServiceId, professionalId);
   });
 });
 
