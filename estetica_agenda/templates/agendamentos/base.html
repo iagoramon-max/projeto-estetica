@@ -1,35 +1,75 @@
+{% load static %}
 <!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Studio Belleza — Agendamentos</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
-  <style> body { font-family: 'Poppins', sans-serif; } </style>
-</head>
-<body class="bg-gradient-to-b from-pink-50 to-white min-h-screen p-6">
-  <div class="max-w-6xl mx-auto bg-white/95 rounded-3xl p-6 shadow-xl">
-    <header class="flex items-center justify-between mb-6">
-      <div class="flex items-center gap-4">
-        <div class="w-12 h-12 bg-gradient-to-br from-pink-400 to-pink-600 rounded-xl flex items-center justify-center text-white">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 3C14.5 3 16 4.5 16 7C16 10 12 13 12 13C12 13 8 10 8 7C8 4.5 9.5 3 12 3Z" fill="white"/>
-            <circle cx="12" cy="16.5" r="3.5" fill="white"/>
-          </svg>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Studio Belleza — Agenda online{% endblock %}</title>
+
+    <!-- Primary stylesheet (projeto) -->
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <!-- Fallback / CDN (apenas se você não tem o Tailwind build) -->
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+
+    <!-- Ícones simples (opcional) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.28.0/feather.min.css" integrity="sha512-..." crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <style>
+      /* Ajustes visuais rápidos usados pelo layout (ajuste conforme quiser) */
+      body { background: linear-gradient(90deg, #fffafc 0%, #fff6f8 100%); }
+      .card { background: white; border-radius: 1rem; box-shadow: 0 6px 24px rgba(13,12,20,0.06); }
+      /* Mini ajuste para botão Admin não "flutuar" no mobile */
+      .header-actions { display:flex; gap:0.75rem; align-items:center; }
+      @media (max-width: 640px) {
+        .header-actions { margin-top: 0.25rem; }
+        .admin-btn { padding: .5rem .8rem; font-size: 0.95rem; border-radius: .6rem; }
+        .whatsapp-btn { padding: .6rem .9rem; font-size: 0.98rem; }
+      }
+    </style>
+
+    {% block head %}{% endblock %}
+  </head>
+  <body class="antialiased text-gray-800">
+    <header class="p-4">
+      <div class="max-w-6xl mx-auto flex items-center gap-6">
+        <!-- Logo / título -->
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-lg bg-pink-500 flex items-center justify-center text-white font-bold">¡</div>
+          <div>
+            <div class="text-xl font-bold text-pink-600">Studio Belleza</div>
+            <div class="text-xs text-gray-500">Agenda online · Simulação UNIVESP</div>
+          </div>
         </div>
-        <div>
-          <h1 class="text-2xl font-bold text-pink-600">Studio Belleza</h1>
-          <p class="text-sm text-gray-500">Agenda online • Simulação UNIVESP</p>
+
+        <!-- espaço flexível -->
+        <div class="flex-1"></div>
+
+        <!-- ações (WhatsApp / Admin) -->
+        <div class="header-actions items-center">
+          <a href="#" class="whatsapp-btn bg-pink-600 text-white rounded-lg px-4 py-2 shadow-sm hover:bg-pink-700 transition">Agende pelo WhatsApp</a>
+          <!-- admin link: usa url do admin do Django -->
+          <a href="{% url 'admin:index' %}" class="admin-btn border rounded-lg px-3 py-2 bg-white hover:shadow-sm transition">Admin</a>
         </div>
-      </div>
-      <div class="flex gap-3">
-        <a href="#" class="px-4 py-2 bg-pink-600 text-white rounded-lg shadow">Agende pelo WhatsApp</a>
-        <a href="/admin/" class="px-4 py-2 border rounded-lg">Admin</a>
       </div>
     </header>
-    <main>{% block content %}{% endblock %}</main>
-    <footer class="mt-6 text-xs text-gray-400">Protótipo para apresentação acadêmica — notificações WhatsApp simuladas.</footer>
-  </div>
-</body>
+
+    <main class="max-w-6xl mx-auto p-6">
+      <div class="card p-8">
+        {% block content %}
+        <!-- Conteúdo injetado pelas páginas -->
+        {% endblock %}
+      </div>
+    </main>
+
+    <footer class="max-w-6xl mx-auto p-6 text-center text-sm text-gray-400">
+      Protótipo para apresentação acadêmica — notificações WhatsApp simuladas.
+    </footer>
+
+    <!-- Scripts gerais -->
+    <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
+    <script>if(window.feather) feather.replace()</script>
+
+    {% block scripts %}{% endblock %}
+  </body>
 </html>
