@@ -25,6 +25,17 @@ DAY_SCHEDULE = {
     6: None,                       # dom fechado
 }
 
+
+def make_aware_if_naive(dt):
+    """
+    Recebe um datetime e retorna um aware datetime usando timezone.get_current_timezone()
+    se o datetime for naive. Se já for aware, retorna como está.
+    """
+    if timezone.is_naive(dt):
+        return timezone.make_aware(dt, timezone.get_current_timezone())
+    return dt
+
+
 def parse_day_to_date(day_str):
     """
     Aceita ISO (YYYY-MM-DD) ou formato tipo '3 de Novembro de 2025'.
@@ -56,6 +67,7 @@ def parse_day_to_date(day_str):
 
     raise ValueError(f"Formato de data inválido: {day_str}")
 
+
 def get_work_period_for_date(day_date):
     """
     Retorna (start_time, end_time) do expediente para a data dada.
@@ -64,9 +76,11 @@ def get_work_period_for_date(day_date):
     weekday = day_date.weekday()  # 0=segunda
     return DAY_SCHEDULE.get(weekday, None)
 
+
 def generate_slots_for_day(day_date, service_duration_min):
     """
     Gera lista de datetimes (início) válidos naquele dia respeitando o expediente.
+    Retorna datetimes *aware* (com timezone) para evitar comparações inválidas.
     Se dia fechado, retorna [].
     """
     period = get_work_period_for_date(day_date)
@@ -77,18 +91,29 @@ def generate_slots_for_day(day_date, service_duration_min):
     slots = []
     cur = datetime.combine(day_date, start_time)
     end_of_day = datetime.combine(day_date, end_time)
+
+    # tornar aware (se o projeto usa USE_TZ=True, fazemos aware)
+    # use make_aware_if_naive para ser seguro
+    cur = make_aware_if_naive(cur)
+    end_of_day = make_aware_if_naive(end_of_day)
+
     # permitimos slots enquanto slot_start + duration <= end_of_day
     while cur + timedelta(minutes=service_duration_min) <= end_of_day:
         slots.append(cur)
-        cur += timedelta(minutes=SLOT_INTERVAL_MIN)
+        cur = cur + timedelta(minutes=SLOT_INTERVAL_MIN)
     return slots
 
+
 def is_conflicting(professional, start_dt, end_dt):
+    # garantir start_dt/end_dt aware
+    start_dt = make_aware_if_naive(start_dt)
+    end_dt = make_aware_if_naive(end_dt)
     return Booking.objects.filter(
         professional=professional,
         start_datetime__lt=end_dt,
         end_datetime__gt=start_dt
     ).exists()
+
 
 def index(request):
     services = Service.objects.all()
@@ -98,8 +123,9 @@ def index(request):
 
     days_info = []
     for d in raw_days:
-        day_start = datetime.combine(d, time(0,0))
-        day_end = datetime.combine(d, time(23,59,59))
+        # day_start/day_end em aware para consistência
+        day_start = make_aware_if_naive(datetime.combine(d, time(0,0)))
+        day_end = make_aware_if_naive(datetime.combine(d, time(23,59,59)))
         count = 0
         if prof:
             count = Booking.objects.filter(professional=prof, start_datetime__gte=day_start, start_datetime__lte=day_end).count()
@@ -110,6 +136,7 @@ def index(request):
         'professional': prof,
         'days_info': days_info,
     })
+
 
 def slots_for_day(request):
     """
@@ -134,12 +161,13 @@ def slots_for_day(request):
         slots = generate_slots_for_day(day_date, service.duration_min)
 
         # bookings do dia (para marcar ocupados)
-        day_start = datetime.combine(day_date, time(0,0))
-        day_end = datetime.combine(day_date, time(23,59,59))
+        day_start = make_aware_if_naive(datetime.combine(day_date, time(0,0)))
+        day_end = make_aware_if_naive(datetime.combine(day_date, time(23,59,59)))
         bookings = Booking.objects.filter(professional=prof, start_datetime__gte=day_start, start_datetime__lte=day_end)
 
         occupied = []
         for b in bookings:
+            # b.start_datetime e b.end_datetime costumam ser aware vindo do banco
             occupied.append((b.start_datetime, b.end_datetime))
 
         slots_info = []
@@ -147,6 +175,9 @@ def slots_for_day(request):
             s_end = s + timedelta(minutes=service.duration_min)
             available = True
             for (o_s, o_e) in occupied:
+                # garantir comparações entre aware datetimes
+                o_s = make_aware_if_naive(o_s)
+                o_e = make_aware_if_naive(o_e)
                 if s < o_e and s_end > o_s:
                     available = False
                     break
@@ -167,6 +198,7 @@ def slots_for_day(request):
         print("ERROR in slots_for_day:", str(e))
         traceback.print_exc()
         return HttpResponse("Erro interno ao obter horários.", status=500)
+
 
 @require_POST
 @csrf_exempt
@@ -196,10 +228,13 @@ def book_appointment(request):
         return HttpResponseBadRequest('Profissional ou serviço inválido')
 
     try:
+        # parse start ISO em aware/naive: fromisoformat produz naive se sem offset, então convertemos
         start_dt = datetime.fromisoformat(start_iso)
     except Exception:
         return HttpResponseBadRequest('Formato de data inválido')
 
+    # tornar aware se necessário
+    start_dt = make_aware_if_naive(start_dt)
     end_dt = start_dt + timedelta(minutes=service.duration_min)
 
     try:
@@ -227,6 +262,7 @@ def book_appointment(request):
         'client_name': booking.client_name,
         'client_phone': booking.client_phone
     }})
+
 
 @require_POST
 @csrf_exempt
