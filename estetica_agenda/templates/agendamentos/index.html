@@ -3,15 +3,15 @@
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Serviços</h2>
-    <div class="space-y-3">
+    <div class="space-y-3" id="services-list">
       {% for s in services %}
-      <label class="block p-3 rounded-xl border hover:shadow-sm cursor-pointer flex items-center justify-between">
+      <label class="service-item block p-3 rounded-xl border hover:shadow-sm cursor-pointer flex items-center justify-between"
+             data-service-id="{{ s.id }}">
         <div>
           <div class="font-medium">{{ s.name }}</div>
           <div class="text-xs text-gray-500">{{ s.duration_min }} min • R$ {{ s.price }}</div>
         </div>
-        <input type="radio" name="service" value="{{ s.id }}" {% if forloop.first %}checked{% endif %}
-               onclick="fetchSlots('{{ days_info.0.iso }}', {{ s.id }}, {{ professional.id }})">
+        <input class="service-radio" type="radio" name="service" value="{{ s.id }}" {% if forloop.first %}checked{% endif %}>
       </label>
       {% endfor %}
     </div>
@@ -20,13 +20,11 @@
   <!-- Calendário em grade 7 colunas com badge -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Escolha o dia</h2>
-    <div class="grid grid-cols-7 gap-2">
+    <div class="grid grid-cols-7 gap-2" id="days-grid">
       {% for d in days_info %}
-        {% with dt=d.date %}
-        <button class="p-2 rounded-lg border text-sm text-center flex flex-col items-center justify-center relative"
+        <button class="day-btn p-2 rounded-lg border text-sm text-center flex flex-col items-center justify-center relative"
                 data-iso="{{ d.iso }}"
-                onclick="fetchSlots(this.dataset.iso, {{ services.0.id }}, {{ professional.id }})"
-                title="{{ d.date|date:'l, d F Y' }}">
+                data-date="{{ d.date|date:'Y-m-d' }}">
           <div class="text-xs text-gray-400">{{ d.date|date:"D" }}</div>
           <div class="font-medium">{{ d.date|date:"d" }}</div>
 
@@ -34,7 +32,6 @@
             <span class="absolute -top-2 -right-2 bg-pink-600 text-white text-xs px-2 py-0.5 rounded-full">{{ d.count }}</span>
           {% endif %}
         </button>
-        {% endwith %}
       {% endfor %}
     </div>
   </section>
@@ -48,11 +45,47 @@
 </div>
 
 <script>
-/* fetchSlots com timeout de 8s */
+/* Utilitários de DOM e estado */
+let selectedServiceId = document.querySelector('.service-radio:checked')?.value || null;
+let selectedDayIso = null;
+let professionalId = {{ professional.id if professional else 'null' }};
+
+/* Marcar visualmente o serviço selecionado */
+document.querySelectorAll('.service-item').forEach(item=>{
+  item.addEventListener('click', ()=>{
+    document.querySelectorAll('.service-item').forEach(i=>i.classList.remove('ring-2','ring-pink-300'));
+    item.classList.add('ring-2','ring-pink-300');
+    const radio = item.querySelector('.service-radio');
+    radio.checked = true;
+    selectedServiceId = radio.value;
+    // se já tiver dia selecionado, recarrega horários
+    if(selectedDayIso) fetchSlots(selectedDayIso, selectedServiceId, professionalId);
+  });
+});
+
+/* marcar dia clicado e solicitar slots */
+document.querySelectorAll('.day-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    // remover seleção anterior
+    document.querySelectorAll('.day-btn').forEach(b=>b.classList.remove('border-pink-600','bg-pink-50'));
+    btn.classList.add('border-pink-600','bg-pink-50');
+    selectedDayIso = btn.dataset.iso;
+    // busca slots
+    if(!selectedServiceId){
+      alert('Selecione um serviço primeiro');
+      return;
+    }
+    fetchSlots(selectedDayIso, selectedServiceId, professionalId);
+  });
+});
+
+/* fetchSlots com timeout e mensagens mais claras */
 async function fetchSlots(day, serviceId, profId){
   const url = `/slots/?day=${encodeURIComponent(day)}&service_id=${serviceId}&professional_id=${profId}`;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const timeout = setTimeout(()=>controller.abort(), 8000);
+
+  document.getElementById('slots').innerHTML = '<div class="text-gray-500">Carregando horários...</div>';
 
   try {
     const resp = await fetch(url, { signal: controller.signal });
@@ -60,6 +93,16 @@ async function fetchSlots(day, serviceId, profId){
     if(resp.status === 200){
       const html = await resp.text();
       document.getElementById('slots').innerHTML = html;
+      // adicionar comportamento para destacar horário ao clicar (delegation)
+      document.querySelectorAll('.slot-button').forEach(b=>{
+        b.addEventListener('click', ()=> {
+          document.querySelectorAll('.slot-button').forEach(x=>x.classList.remove('ring-2','ring-pink-300'));
+          b.classList.add('ring-2','ring-pink-300');
+        });
+      });
+    } else if (resp.status === 400){
+      const text = await resp.text();
+      document.getElementById('slots').innerHTML = `<div class="text-red-600">Parâmetros inválidos: ${text}</div>`;
     } else {
       const text = await resp.text();
       document.getElementById('slots').innerHTML = `<div class="text-red-600">Erro ao carregar horários (status ${resp.status}).</div>`;
