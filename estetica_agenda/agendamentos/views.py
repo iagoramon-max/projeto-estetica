@@ -7,14 +7,23 @@ from django.db import transaction
 from datetime import datetime, timedelta, time, date
 from django.views.decorators.http import require_POST
 from django.template.loader import render_to_string
-from .forms import QuickBookingForm
 from django.views.decorators.csrf import csrf_exempt
 import traceback
 
-# Configurações iniciais
-WORK_START = time(9, 0)
-WORK_END = time(19, 0)
+# configuração: granulação dos slots (15 minutos)
 SLOT_INTERVAL_MIN = 15
+
+# horários por dia da semana (0=segunda, 6=domingo)
+# cada valor é (start_time, end_time) onde end_time é hora limite do expediente
+DAY_SCHEDULE = {
+    0: (time(8, 0), time(17, 0)),  # seg
+    1: (time(8, 0), time(17, 0)),  # ter
+    2: (time(8, 0), time(17, 0)),  # qua
+    3: (time(8, 0), time(17, 0)),  # qui
+    4: (time(8, 0), time(17, 0)),  # sex
+    5: (time(8, 0), time(12, 0)),  # sab
+    6: None,                       # dom fechado
+}
 
 def parse_day_to_date(day_str):
     """
@@ -47,10 +56,28 @@ def parse_day_to_date(day_str):
 
     raise ValueError(f"Formato de data inválido: {day_str}")
 
+def get_work_period_for_date(day_date):
+    """
+    Retorna (start_time, end_time) do expediente para a data dada.
+    Se fechado, retorna None.
+    """
+    weekday = day_date.weekday()  # 0=segunda
+    return DAY_SCHEDULE.get(weekday, None)
+
 def generate_slots_for_day(day_date, service_duration_min):
+    """
+    Gera lista de datetimes (início) válidos naquele dia respeitando o expediente.
+    Se dia fechado, retorna [].
+    """
+    period = get_work_period_for_date(day_date)
+    if not period:
+        return []  # dia fechado
+
+    start_time, end_time = period
     slots = []
-    cur = datetime.combine(day_date, WORK_START)
-    end_of_day = datetime.combine(day_date, WORK_END)
+    cur = datetime.combine(day_date, start_time)
+    end_of_day = datetime.combine(day_date, end_time)
+    # permitimos slots enquanto slot_start + duration <= end_of_day
     while cur + timedelta(minutes=service_duration_min) <= end_of_day:
         slots.append(cur)
         cur += timedelta(minutes=SLOT_INTERVAL_MIN)
@@ -66,10 +93,9 @@ def is_conflicting(professional, start_dt, end_dt):
 def index(request):
     services = Service.objects.all()
     prof = Professional.objects.first()
-    # Próximos 14 dias (a partir de hoje)
+    # próximos 14 dias (inclui hoje)
     raw_days = [ (timezone.localdate() + timedelta(days=i)) for i in range(0, 14) ]
 
-    # Para cada dia, contamos quantos agendamentos existem para o profissional
     days_info = []
     for d in raw_days:
         day_start = datetime.combine(d, time(0,0))
@@ -86,6 +112,9 @@ def index(request):
     })
 
 def slots_for_day(request):
+    """
+    Endpoint que retorna o partial HTML com os slots daquele dia para um serviço e profissional.
+    """
     try:
         day = request.GET.get('day')
         service_id = request.GET.get('service_id')
@@ -93,6 +122,7 @@ def slots_for_day(request):
         if not (day and service_id and prof_id):
             return HttpResponseBadRequest('Parâmetros faltando')
 
+        # parse da data
         try:
             day_date = parse_day_to_date(day)
         except ValueError:
@@ -102,6 +132,8 @@ def slots_for_day(request):
         prof = get_object_or_404(Professional, pk=prof_id)
 
         slots = generate_slots_for_day(day_date, service.duration_min)
+
+        # bookings do dia (para marcar ocupados)
         day_start = datetime.combine(day_date, time(0,0))
         day_end = datetime.combine(day_date, time(23,59,59))
         bookings = Booking.objects.filter(professional=prof, start_datetime__gte=day_start, start_datetime__lte=day_end)
@@ -110,7 +142,6 @@ def slots_for_day(request):
         for b in bookings:
             occupied.append((b.start_datetime, b.end_datetime))
 
-        # Importante: passamos também a string ISO pronta para o template
         slots_info = []
         for s in slots:
             s_end = s + timedelta(minutes=service.duration_min)
@@ -121,11 +152,16 @@ def slots_for_day(request):
                     break
             slots_info.append({
                 'start': s,
-                'start_iso': s.isoformat(),   # <-- string ISO pronta
+                'start_iso': s.isoformat(),
                 'available': available
             })
 
-        html = render_to_string('agendamentos/partials/slots.html', {'slots_info': slots_info, 'service': service, 'request': request})
+        # PASSAR professional explicitamente (não depender de request.GET no template)
+        html = render_to_string('agendamentos/partials/slots.html', {
+            'slots_info': slots_info,
+            'service': service,
+            'professional': prof
+        }, request=request)
         return HttpResponse(html)
     except Exception as e:
         print("ERROR in slots_for_day:", str(e))
