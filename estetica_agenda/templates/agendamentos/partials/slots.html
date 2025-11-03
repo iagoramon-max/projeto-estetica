@@ -1,20 +1,26 @@
 <div>
   <div class="text-sm text-gray-500 mb-3">Horários disponíveis</div>
-  <div class="grid grid-cols-3 gap-2">
-    {% for s in slots_info %}
-      {% if s.available %}
-        <button class="p-2 rounded-lg border bg-white hover:bg-pink-50"
-                onclick="openBookingForm('{{ s.start_iso }}', {{ service.id }}, {{ request.GET.professional_id }})">
-          {{ s.start|date:'H:i' }}
-        </button>
-      {% else %}
-        <button class="p-2 rounded-lg border bg-gray-100 text-gray-400 cursor-not-allowed" disabled>Ocupado</button>
-      {% endif %}
-    {% endfor %}
-  </div>
+
+  {% if slots_info|length == 0 %}
+    <div class="text-sm text-gray-500">Nenhum horário disponível nesse dia (dia fechado ou expediente encerrado).</div>
+  {% else %}
+    <div class="grid grid-cols-3 gap-2">
+      {% for s in slots_info %}
+        {% if s.available %}
+          <button class="slot-button p-2 rounded-lg border bg-white hover:bg-pink-50"
+                  onclick="openBookingForm('{{ s.start_iso }}', {{ service.id }}, {{ professional.id }})">
+            {{ s.start|date:'H:i' }}
+          </button>
+        {% else %}
+          <button class="p-2 rounded-lg border bg-gray-100 text-gray-400 cursor-not-allowed" disabled>Ocupado</button>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
 </div>
 
 <script>
+/* openBookingForm permanece igual; recebe startIso string e professional id explícito */
 function openBookingForm(startIso, serviceId, profId){
   const formatted = new Date(startIso).toLocaleString('pt-BR');
   const html = `
@@ -53,11 +59,21 @@ function openBookingForm(startIso, serviceId, profId){
         body: JSON.stringify({booking_id: data.booking.id, to: 'professional'})
       });
       document.getElementById('modalWrap').remove();
-      location.reload();
+      // recarrega a lista de horários do dia atual para bloquear o slot ocupado
+      if(window.selectedDayIso && window.selectedServiceId){
+        fetchSlots(window.selectedDayIso, window.selectedServiceId, profId);
+      } else {
+        location.reload();
+      }
     } else if(resp.status === 409){
       alert('Horário já reservado');
       document.getElementById('modalWrap').remove();
-      location.reload();
+      // recarrega para atualizar estado
+      if(window.selectedDayIso && window.selectedServiceId){
+        fetchSlots(window.selectedDayIso, window.selectedServiceId, profId);
+      } else {
+        location.reload();
+      }
     } else {
       alert('Erro ao criar agendamento');
       document.getElementById('modalWrap').remove();
