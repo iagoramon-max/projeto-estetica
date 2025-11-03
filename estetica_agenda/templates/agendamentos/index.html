@@ -11,21 +11,28 @@
           <div class="text-xs text-gray-500">{{ s.duration_min }} min • R$ {{ s.price }}</div>
         </div>
         <input type="radio" name="service" value="{{ s.id }}" {% if forloop.first %}checked{% endif %}
-               onclick="fetchSlots('{{ days.0 }}', {{ s.id }}, {{ professional.id }})">
+               onclick="fetchSlots('{{ days.0|date:'Y-m-d' }}', {{ s.id }}, {{ professional.id }})">
       </label>
       {% endfor %}
     </div>
   </section>
+
+  <!-- Calendário em grade 7 colunas -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Escolha o dia</h2>
-    <div class="grid grid-cols-3 gap-2">
+    <div class="grid grid-cols-7 gap-2">
       {% for d in days %}
-      <button class="p-2 rounded-lg border text-sm" onclick="fetchSlots('{{ d }}', {{ services.0.id }}, {{ professional.id }})">
-        {{ d|date:"D d/m" }}
-      </button>
+        <button class="p-3 rounded-lg border text-sm text-center flex flex-col items-center justify-center"
+                data-iso="{{ d|date:'Y-m-d' }}"
+                onclick="fetchSlots(this.dataset.iso, {{ services.0.id }}, {{ professional.id }})"
+                title="{{ d|date:'l, d \\de F \\de Y' }}">
+          <div class="text-xs text-gray-400">{{ d|date:"D" }}</div>
+          <div class="font-medium">{{ d|date:"d" }}</div>
+        </button>
       {% endfor %}
     </div>
   </section>
+
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Horários</h2>
     <div id="slots" class="min-h-[220px] p-3 border rounded-lg bg-white">
@@ -33,12 +40,21 @@
     </div>
   </section>
 </div>
+
 <script>
 async function fetchSlots(day, serviceId, profId){
+  // day já é ISO (YYYY-MM-DD) por causa do data-iso ou date filter
   const url = `/slots/?day=${encodeURIComponent(day)}&service_id=${serviceId}&professional_id=${profId}`;
   const resp = await fetch(url);
-  const html = await resp.text();
-  document.getElementById('slots').innerHTML = html;
+  if(resp.status === 200){
+    const html = await resp.text();
+    document.getElementById('slots').innerHTML = html;
+  } else {
+    // mensagens simples de erro para usuário (melhorar se quiser)
+    const text = await resp.text();
+    document.getElementById('slots').innerHTML = `<div class="text-red-600">Erro ao carregar horários: ${resp.status}</div>`;
+    console.error('Erro slots:', resp.status, text);
+  }
 }
 </script>
 {% endblock %}
