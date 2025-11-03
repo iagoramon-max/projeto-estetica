@@ -6,51 +6,85 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}Studio Belleza — Agenda online{% endblock %}</title>
 
-    <!-- Primary stylesheet (projeto) -->
+    <!-- primary stylesheet (local) -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 
-    <!-- Fallback / CDN (apenas se você não tem o Tailwind build) -->
+    <!-- fallback Tailwind CDN para garantir que rode sem build de CSS -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 
     <style>
-      /* Ajustes visuais rápidos usados pelo layout */
-      body { background: linear-gradient(90deg, #fffafc 0%, #fff6f8 100%); }
-      .card { background: white; border-radius: 1rem; box-shadow: 0 6px 24px rgba(13,12,20,0.06); }
-      .header-actions { display:flex; gap:0.75rem; align-items:center; }
-      @media (max-width: 640px) {
-        .header-actions { margin-top: 0.25rem; }
+      /* Fundo suave */
+      body { background: linear-gradient(180deg, #fffafc 0%, #fff6f8 100%); }
+
+      /* Card principal (o cartão branco grande) */
+      .main-card {
+        background: linear-gradient(180deg, rgba(255,255,255,1), rgba(255,255,255,1));
+        border-radius: 1.25rem;
+        box-shadow: 0 10px 30px rgba(13,12,20,0.06);
+        border: 1px solid rgba(0,0,0,0.03);
+      }
+
+      /* Cabeçalho interno do card: alinhamento e espaçamento */
+      .card-header {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .brand {
+        display:flex;
+        gap:0.75rem;
+        align-items:center;
+      }
+      .brand-badge {
+        width:48px;height:48px;border-radius:12px;
+        background:linear-gradient(180deg,#ff5d9e,#ff3b84);
+        color:white; display:flex; align-items:center; justify-content:center; font-weight:700;
+      }
+
+      /* Botão WhatsApp (chamado para ação) */
+      .whatsapp-btn {
+        background: linear-gradient(180deg,#ff5d9e,#ff3b84);
+        color: white;
+        padding: 0.6rem 1rem;
+        border-radius: 0.75rem;
+        box-shadow: 0 6px 18px rgba(255,93,158,0.12);
+      }
+
+      /* Responsividade: no mobile, empilha e reduz o padding */
+      @media (max-width: 768px) {
+        .card-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+        .whatsapp-btn { align-self: flex-end; }
       }
     </style>
 
     {% block head %}{% endblock %}
   </head>
   <body class="antialiased text-gray-800">
-    <header class="p-4">
-      <div class="max-w-6xl mx-auto flex items-center gap-6">
-        <!-- Logo / título -->
-        <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-lg bg-pink-500 flex items-center justify-center text-white font-bold">¡</div>
-          <div>
-            <div class="text-xl font-bold text-pink-600">Studio Belleza</div>
-            <div class="text-xs text-gray-500">Agenda online · Simulação UNIVESP</div>
-          </div>
-        </div>
-
-        <!-- espaço flexível -->
-        <div class="flex-1"></div>
-
-        <!-- ação pública (WhatsApp) — opcional, mantém a CTA -->
-        <div class="header-actions items-center">
-          <a href="#" class="whatsapp-btn bg-pink-600 text-white rounded-lg px-4 py-2 shadow-sm hover:bg-pink-700 transition">Agende pelo WhatsApp</a>
-        </div>
-      </div>
-    </header>
-
     <main class="max-w-6xl mx-auto p-6">
-      <div class="card p-8">
-        {% block content %}
-        <!-- Conteúdo injetado pelas páginas -->
-        {% endblock %}
+      <div class="main-card p-6 md:p-8">
+        <!-- Cabeçalho dentro do card -->
+        <header class="card-header mb-6">
+          <div class="brand">
+            <div class="brand-badge">¡</div>
+            <div>
+              <div class="text-xl font-bold text-pink-600">Studio Belleza</div>
+              <div class="text-xs text-gray-500">Agenda online · Simulação UNIVESP</div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <a href="#" class="whatsapp-btn hover:opacity-95 transition">Agende pelo WhatsApp</a>
+          </div>
+        </header>
+
+        <!-- Conteúdo da página dentro do mesmo card -->
+        <section>
+          {% block content %}
+          <!-- Conteúdo específico (index.html) será injetado aqui -->
+          {% endblock %}
+        </section>
       </div>
     </main>
 
@@ -58,7 +92,7 @@
       Protótipo para apresentação acadêmica — notificações WhatsApp simuladas.
     </footer>
 
-    <!-- Ícones (opcional) -->
+    <!-- Feather icons (opcional) -->
     <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
     <script>if(window.feather) feather.replace()</script>
 
