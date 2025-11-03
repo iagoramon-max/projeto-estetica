@@ -17,24 +17,21 @@
     </div>
   </section>
 
-  <!-- Calendário em grade 7 colunas com badge -->
+    <!-- Calendário em grade 7 colunas (sem badge) -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Escolha o dia</h2>
     <div class="grid grid-cols-7 gap-2" id="days-grid">
       {% for d in days_info %}
-        <button class="day-btn p-2 rounded-lg border text-sm text-center flex flex-col items-center justify-center relative"
+        <button class="day-btn p-2 rounded-lg border text-sm text-center flex flex-col items-center justify-center"
                 data-iso="{{ d.iso }}"
                 data-date="{{ d.date|date:'Y-m-d' }}">
           <div class="text-xs text-gray-400">{{ d.date|date:"D" }}</div>
           <div class="font-medium">{{ d.date|date:"d" }}</div>
-
-          {% if d.count > 0 %}
-            <span class="absolute -top-2 -right-2 bg-pink-600 text-white text-xs px-2 py-0.5 rounded-full">{{ d.count }}</span>
-          {% endif %}
         </button>
       {% endfor %}
     </div>
   </section>
+
 
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Horários</h2>
