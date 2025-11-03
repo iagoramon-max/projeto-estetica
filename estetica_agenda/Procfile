@@ -1,0 +1,1 @@
+web: gunicorn estetica_agenda.wsgi --log-file -

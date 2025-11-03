@@ -1,0 +1,44 @@
+{% extends 'agendamentos/base.html' %}
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+  <section class="p-4">
+    <h2 class="font-semibold text-lg mb-4">Serviços</h2>
+    <div class="space-y-3">
+      {% for s in services %}
+      <label class="block p-3 rounded-xl border hover:shadow-sm cursor-pointer flex items-center justify-between">
+        <div>
+          <div class="font-medium">{{ s.name }}</div>
+          <div class="text-xs text-gray-500">{{ s.duration_min }} min • R$ {{ s.price }}</div>
+        </div>
+        <input type="radio" name="service" value="{{ s.id }}" {% if forloop.first %}checked{% endif %}
+               onclick="fetchSlots('{{ days.0 }}', {{ s.id }}, {{ professional.id }})">
+      </label>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="p-4">
+    <h2 class="font-semibold text-lg mb-4">Escolha o dia</h2>
+    <div class="grid grid-cols-3 gap-2">
+      {% for d in days %}
+      <button class="p-2 rounded-lg border text-sm" onclick="fetchSlots('{{ d }}', {{ services.0.id }}, {{ professional.id }})">
+        {{ d|date:"D d/m" }}
+      </button>
+      {% endfor %}
+    </div>
+  </section>
+  <section class="p-4">
+    <h2 class="font-semibold text-lg mb-4">Horários</h2>
+    <div id="slots" class="min-h-[220px] p-3 border rounded-lg bg-white">
+      <div class="text-sm text-gray-400">Escolha um serviço e um dia para ver horários.</div>
+    </div>
+  </section>
+</div>
+<script>
+async function fetchSlots(day, serviceId, profId){
+  const url = `/slots/?day=${encodeURIComponent(day)}&service_id=${serviceId}&professional_id=${profId}`;
+  const resp = await fetch(url);
+  const html = await resp.text();
+  document.getElementById('slots').innerHTML = html;
+}
+</script>
+{% endblock %}
