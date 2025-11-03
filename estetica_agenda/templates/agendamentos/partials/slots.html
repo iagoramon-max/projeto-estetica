@@ -4,80 +4,19 @@
   {% if slots_info|length == 0 %}
     <div class="text-sm text-gray-500">Nenhum horário disponível nesse dia (dia fechado ou expediente encerrado).</div>
   {% else %}
-    <div class="grid grid-cols-3 gap-2">
+    <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 gap-2">
       {% for s in slots_info %}
         {% if s.available %}
-          <button class="slot-button p-2 rounded-lg border bg-white hover:bg-pink-50"
-                  onclick="openBookingForm('{{ s.start_iso }}', {{ service.id }}, {{ professional.id }})">
+          <button class="slot-button p-3 rounded-lg border bg-white hover:bg-pink-50 w-full text-sm"
+                  data-start="{{ s.start_iso }}"
+                  data-service="{{ service.id }}"
+                  data-professional="{{ professional.id }}">
             {{ s.start|date:'H:i' }}
           </button>
         {% else %}
-          <button class="p-2 rounded-lg border bg-gray-100 text-gray-400 cursor-not-allowed" disabled>Ocupado</button>
+          <button class="p-3 rounded-lg border bg-gray-100 text-gray-400 cursor-not-allowed w-full text-sm" disabled>Ocupado</button>
         {% endif %}
       {% endfor %}
     </div>
   {% endif %}
 </div>
-
-<script>
-/* openBookingForm permanece igual; recebe startIso string e professional id explícito */
-function openBookingForm(startIso, serviceId, profId){
-  const formatted = new Date(startIso).toLocaleString('pt-BR');
-  const html = `
-  <div id="modalWrap" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-    <div class="bg-white rounded-xl p-6 w-96">
-      <h3 class="text-lg font-semibold mb-3">Confirmar agendamento</h3>
-      <div class="mb-2">Horário: <strong>${formatted}</strong></div>
-      <div class="mb-2"><input id="modal-name" placeholder="Nome" class="w-full p-2 border rounded" /></div>
-      <div class="mb-4"><input id="modal-phone" placeholder="Telefone (55119...)" class="w-full p-2 border rounded" /></div>
-      <div class="flex gap-2 justify-end">
-        <button onclick="document.getElementById('modalWrap').remove()" class="px-3 py-1 border rounded">Cancelar</button>
-        <button id="confirm-book" class="px-4 py-2 bg-pink-600 text-white rounded">Confirmar</button>
-      </div>
-    </div>
-  </div>`;
-  const wrapper = document.createElement('div'); wrapper.innerHTML = html; document.body.appendChild(wrapper);
-
-  document.getElementById('confirm-book').addEventListener('click', async ()=>{
-    const name = document.getElementById('modal-name').value;
-    const phone = document.getElementById('modal-phone').value;
-    if(!name || !phone) return alert('Preencha nome e telefone');
-    const payload = new FormData();
-    payload.append('professional_id', profId);
-    payload.append('service_id', serviceId);
-    payload.append('start', startIso);
-    payload.append('client_name', name);
-    payload.append('client_phone', phone);
-
-    const resp = await fetch('/book/', { method: 'POST', body: payload });
-    if(resp.status === 200){
-      const data = await resp.json();
-      alert('Agendamento criado!');
-      await fetch('/notify-whatsapp/', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({booking_id: data.booking.id, to: 'professional'})
-      });
-      document.getElementById('modalWrap').remove();
-      // recarrega a lista de horários do dia atual para bloquear o slot ocupado
-      if(window.selectedDayIso && window.selectedServiceId){
-        fetchSlots(window.selectedDayIso, window.selectedServiceId, profId);
-      } else {
-        location.reload();
-      }
-    } else if(resp.status === 409){
-      alert('Horário já reservado');
-      document.getElementById('modalWrap').remove();
-      // recarrega para atualizar estado
-      if(window.selectedDayIso && window.selectedServiceId){
-        fetchSlots(window.selectedDayIso, window.selectedServiceId, profId);
-      } else {
-        location.reload();
-      }
-    } else {
-      alert('Erro ao criar agendamento');
-      document.getElementById('modalWrap').remove();
-    }
-  });
-}
-</script>
