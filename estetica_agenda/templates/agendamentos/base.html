@@ -6,56 +6,69 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}Studio Belleza — Agenda online{% endblock %}</title>
 
-    <!-- primary stylesheet (local) -->
+    <!-- CSS local -->
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 
-    <!-- fallback Tailwind CDN para garantir que rode sem build de CSS -->
+    <!-- Tailwind fallback -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 
     <style>
-      /* Fundo suave */
       body { background: linear-gradient(180deg, #fffafc 0%, #fff6f8 100%); }
 
-      /* Card principal (o cartão branco grande) */
       .main-card {
-        background: linear-gradient(180deg, rgba(255,255,255,1), rgba(255,255,255,1));
+        background: white;
         border-radius: 1.25rem;
         box-shadow: 0 10px 30px rgba(13,12,20,0.06);
         border: 1px solid rgba(0,0,0,0.03);
       }
 
-      /* Cabeçalho interno do card: alinhamento e espaçamento */
       .card-header {
         display: flex;
-        gap: 1rem;
-        align-items: center;
         justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
       }
 
       .brand {
-        display:flex;
-        gap:0.75rem;
-        align-items:center;
-      }
-      .brand-badge {
-        width:48px;height:48px;border-radius:12px;
-        background:linear-gradient(180deg,#ff5d9e,#ff3b84);
-        color:white; display:flex; align-items:center; justify-content:center; font-weight:700;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
       }
 
-      /* Botão WhatsApp (chamado para ação) */
+      .brand-logo {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #ff5d9e, #ff3b84);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Ícone Barbie (silhueta branca) */
+      .brand-logo svg {
+        width: 26px;
+        height: 26px;
+        fill: white;
+      }
+
       .whatsapp-btn {
-        background: linear-gradient(180deg,#ff5d9e,#ff3b84);
+        background: linear-gradient(180deg, #ff5d9e, #ff3b84);
         color: white;
         padding: 0.6rem 1rem;
         border-radius: 0.75rem;
-        box-shadow: 0 6px 18px rgba(255,93,158,0.12);
+        box-shadow: 0 6px 18px rgba(255,93,158,0.15);
       }
 
-      /* Responsividade: no mobile, empilha e reduz o padding */
+      .content-section {
+        margin-top: 2rem;
+      }
+
       @media (max-width: 768px) {
-        .card-header { flex-direction: column; align-items: flex-start; gap: 0.5rem; }
+        .card-header { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
         .whatsapp-btn { align-self: flex-end; }
+        .content-section { margin-top: 1.5rem; }
       }
     </style>
 
@@ -65,24 +78,28 @@
     <main class="max-w-6xl mx-auto p-6">
       <div class="main-card p-6 md:p-8">
         <!-- Cabeçalho dentro do card -->
-        <header class="card-header mb-6">
+        <header class="card-header">
           <div class="brand">
-            <div class="brand-badge">¡</div>
+            <div class="brand-logo">
+              <!-- Silhueta inspirada na Barbie -->
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+                <path d="M256 32C132.3 32 32 132.3 32 256s100.3 224 224 224c67.3 0 128.1-27.3 171.5-71.5S480 323.3 480 256 452.7 127.9 408.5 84.5 323.3 32 256 32zm-12 112c22.1 0 40 17.9 40 40 0 12.2-5.5 23.1-14.2 30.3 16.3 5.9 34.2 17.6 48.2 33.7 19.8 22.5 29.3 47.2 29.3 73.9 0 45.9-22.6 86.1-61.3 111.4-6.6 4.3-15.6 2.4-19.9-4.2s-2.4-15.6 4.2-19.9c28.9-18.9 44.9-47.3 44.9-87.2 0-18.3-6.8-35.7-20.3-51.1-11.6-13.1-25.7-22.5-38.4-26.9-4.7-1.6-9.4-2.8-14-3.4-8.8-1.1-15.6-8.6-15.6-17.5V184c0-4.4 1.8-8.6 4.9-11.7s7.3-4.9 11.7-4.9zm-28 80c8.8 0 16 7.2 16 16v8c0 8.8-7.2 16-16 16s-16-7.2-16-16v-8c0-8.8 7.2-16 16-16z"/>
+              </svg>
+            </div>
             <div>
               <div class="text-xl font-bold text-pink-600">Studio Belleza</div>
               <div class="text-xs text-gray-500">Agenda online · Simulação UNIVESP</div>
             </div>
           </div>
 
-          <div class="flex items-center gap-3">
-            <a href="#" class="whatsapp-btn hover:opacity-95 transition">Agende pelo WhatsApp</a>
-          </div>
+          <a href="#" class="whatsapp-btn hover:opacity-95 transition">
+            Agende pelo WhatsApp
+          </a>
         </header>
 
-        <!-- Conteúdo da página dentro do mesmo card -->
-        <section>
+        <!-- Conteúdo principal -->
+        <section class="content-section">
           {% block content %}
-          <!-- Conteúdo específico (index.html) será injetado aqui -->
           {% endblock %}
         </section>
       </div>
@@ -92,7 +109,6 @@
       Protótipo para apresentação acadêmica — notificações WhatsApp simuladas.
     </footer>
 
-    <!-- Feather icons (opcional) -->
     <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
     <script>if(window.feather) feather.replace()</script>
 
