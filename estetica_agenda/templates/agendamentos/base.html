@@ -12,19 +12,13 @@
     <!-- Fallback / CDN (apenas se você não tem o Tailwind build) -->
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 
-    <!-- Ícones simples (opcional) -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.28.0/feather.min.css" integrity="sha512-..." crossorigin="anonymous" referrerpolicy="no-referrer" />
-
     <style>
-      /* Ajustes visuais rápidos usados pelo layout (ajuste conforme quiser) */
+      /* Ajustes visuais rápidos usados pelo layout */
       body { background: linear-gradient(90deg, #fffafc 0%, #fff6f8 100%); }
       .card { background: white; border-radius: 1rem; box-shadow: 0 6px 24px rgba(13,12,20,0.06); }
-      /* Mini ajuste para botão Admin não "flutuar" no mobile */
       .header-actions { display:flex; gap:0.75rem; align-items:center; }
       @media (max-width: 640px) {
         .header-actions { margin-top: 0.25rem; }
-        .admin-btn { padding: .5rem .8rem; font-size: 0.95rem; border-radius: .6rem; }
-        .whatsapp-btn { padding: .6rem .9rem; font-size: 0.98rem; }
       }
     </style>
 
@@ -45,11 +39,9 @@
         <!-- espaço flexível -->
         <div class="flex-1"></div>
 
-        <!-- ações (WhatsApp / Admin) -->
+        <!-- ação pública (WhatsApp) — opcional, mantém a CTA -->
         <div class="header-actions items-center">
           <a href="#" class="whatsapp-btn bg-pink-600 text-white rounded-lg px-4 py-2 shadow-sm hover:bg-pink-700 transition">Agende pelo WhatsApp</a>
-          <!-- admin link: usa url do admin do Django -->
-          <a href="{% url 'admin:index' %}" class="admin-btn border rounded-lg px-3 py-2 bg-white hover:shadow-sm transition">Admin</a>
         </div>
       </div>
     </header>
@@ -66,7 +58,7 @@
       Protótipo para apresentação acadêmica — notificações WhatsApp simuladas.
     </footer>
 
-    <!-- Scripts gerais -->
+    <!-- Ícones (opcional) -->
     <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
     <script>if(window.feather) feather.replace()</script>
 
