@@ -8,12 +8,13 @@
             {{ start|date:'H:i' }}
           </button>
         {% else %}
-          <button class="p-2 rounded-lg border bg-gray-100 text-gray-400 cursor-not-allowed" disabled>{{ start|date:'H:i' }}</button>
+          <button class="p-2 rounded-lg border bg-gray-100 text-gray-400 cursor-not-allowed" disabled>Ocupado</button>
         {% endif %}
       {% endwith %}
     {% endfor %}
   </div>
 </div>
+
 <script>
 function openBookingForm(startIso, serviceId, profId){
   const formatted = new Date(startIso).toLocaleString('pt-BR');
@@ -31,6 +32,7 @@ function openBookingForm(startIso, serviceId, profId){
     </div>
   </div>`;
   const wrapper = document.createElement('div'); wrapper.innerHTML = html; document.body.appendChild(wrapper);
+
   document.getElementById('confirm-book').addEventListener('click', async ()=>{
     const name = document.getElementById('modal-name').value;
     const phone = document.getElementById('modal-phone').value;
@@ -41,6 +43,7 @@ function openBookingForm(startIso, serviceId, profId){
     payload.append('start', startIso);
     payload.append('client_name', name);
     payload.append('client_phone', phone);
+
     const resp = await fetch('/book/', { method: 'POST', body: payload });
     if(resp.status === 200){
       const data = await resp.json();
@@ -54,8 +57,11 @@ function openBookingForm(startIso, serviceId, profId){
       location.reload();
     } else if(resp.status === 409){
       alert('Horário já reservado');
+      document.getElementById('modalWrap').remove();
+      location.reload();
     } else {
       alert('Erro ao criar agendamento');
+      document.getElementById('modalWrap').remove();
     }
   });
 }
