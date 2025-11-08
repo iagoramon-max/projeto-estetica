@@ -10,12 +10,12 @@ from django.template.loader import render_to_string
 from django.views.decorators.csrf import csrf_exempt
 import traceback
 from django.core.mail import send_mail
+from django.conf import settings
 
 # configuração: granulação dos slots (15 minutos)
 SLOT_INTERVAL_MIN = 15
 
 # horários por dia da semana (0=segunda, 6=domingo)
-# cada valor é (start_time, end_time) onde end_time é hora limite do expediente
 DAY_SCHEDULE = {
     0: (time(8, 0), time(17, 0)),  # seg
     1: (time(8, 0), time(17, 0)),  # ter
@@ -81,8 +81,7 @@ def get_work_period_for_date(day_date):
 def generate_slots_for_day(day_date, service_duration_min):
     """
     Gera lista de datetimes (início) válidos naquele dia respeitando o expediente.
-    Retorna datetimes *aware* (com timezone) para evitar comparações inválidas.
-    Se dia fechado, retorna [].
+    Retorna datetimes *aware* (com timezone).
     """
     period = get_work_period_for_date(day_date)
     if not period:
@@ -93,12 +92,9 @@ def generate_slots_for_day(day_date, service_duration_min):
     cur = datetime.combine(day_date, start_time)
     end_of_day = datetime.combine(day_date, end_time)
 
-    # tornar aware (se o projeto usa USE_TZ=True, fazemos aware)
-    # use make_aware_if_naive para ser seguro
     cur = make_aware_if_naive(cur)
     end_of_day = make_aware_if_naive(end_of_day)
 
-    # permitimos slots enquanto slot_start + duration <= end_of_day
     while cur + timedelta(minutes=service_duration_min) <= end_of_day:
         slots.append(cur)
         cur = cur + timedelta(minutes=SLOT_INTERVAL_MIN)
@@ -106,7 +102,6 @@ def generate_slots_for_day(day_date, service_duration_min):
 
 
 def is_conflicting(professional, start_dt, end_dt):
-    # garantir start_dt/end_dt aware
     start_dt = make_aware_if_naive(start_dt)
     end_dt = make_aware_if_naive(end_dt)
     return Booking.objects.filter(
@@ -119,12 +114,10 @@ def is_conflicting(professional, start_dt, end_dt):
 def index(request):
     services = Service.objects.all()
     prof = Professional.objects.first()
-    # próximos 14 dias (inclui hoje)
     raw_days = [ (timezone.localdate() + timedelta(days=i)) for i in range(0, 14) ]
 
     days_info = []
     for d in raw_days:
-        # day_start/day_end em aware para consistência
         day_start = make_aware_if_naive(datetime.combine(d, time(0,0)))
         day_end = make_aware_if_naive(datetime.combine(d, time(23,59,59)))
         count = 0
@@ -150,7 +143,6 @@ def slots_for_day(request):
         if not (day and service_id and prof_id):
             return HttpResponseBadRequest('Parâmetros faltando')
 
-        # parse da data
         try:
             day_date = parse_day_to_date(day)
         except ValueError:
@@ -161,14 +153,12 @@ def slots_for_day(request):
 
         slots = generate_slots_for_day(day_date, service.duration_min)
 
-        # bookings do dia (para marcar ocupados)
         day_start = make_aware_if_naive(datetime.combine(day_date, time(0,0)))
         day_end = make_aware_if_naive(datetime.combine(day_date, time(23,59,59)))
         bookings = Booking.objects.filter(professional=prof, start_datetime__gte=day_start, start_datetime__lte=day_end)
 
         occupied = []
         for b in bookings:
-            # b.start_datetime e b.end_datetime costumam ser aware vindo do banco
             occupied.append((b.start_datetime, b.end_datetime))
 
         slots_info = []
@@ -176,7 +166,6 @@ def slots_for_day(request):
             s_end = s + timedelta(minutes=service.duration_min)
             available = True
             for (o_s, o_e) in occupied:
-                # garantir comparações entre aware datetimes
                 o_s = make_aware_if_naive(o_s)
                 o_e = make_aware_if_naive(o_e)
                 if s < o_e and s_end > o_s:
@@ -188,7 +177,6 @@ def slots_for_day(request):
                 'available': available
             })
 
-        # PASSAR professional explicitamente (não depender de request.GET no template)
         html = render_to_string('agendamentos/partials/slots.html', {
             'slots_info': slots_info,
             'service': service,
@@ -217,9 +205,8 @@ def book_appointment(request):
         prof_id = int(payload.get('professional_id'))
         service_id = int(payload.get('service_id'))
         start_iso = payload.get('start')
-        client_name = payload.get('client_name') or ''
-        client_phone = payload.get('client_phone') or ''
-        provisional = str(payload.get('provisional', '0')) in ('1', 'true', 'True')
+        client_name = payload.get('client_name')
+        client_phone = payload.get('client_phone')
     except Exception:
         return HttpResponseBadRequest('Dados inválidos')
 
@@ -230,25 +217,12 @@ def book_appointment(request):
         return HttpResponseBadRequest('Profissional ou serviço inválido')
 
     try:
-        # parse start ISO
         start_dt = datetime.fromisoformat(start_iso)
     except Exception:
         return HttpResponseBadRequest('Formato de data inválido')
 
-    # tornar aware se necessário
     start_dt = make_aware_if_naive(start_dt)
     end_dt = start_dt + timedelta(minutes=service.duration_min)
-
-    # se for provisório e sem nome, definimos um placeholder
-    if provisional:
-        if not client_name:
-            client_name = 'Pendente (WhatsApp)'
-        if not client_phone:
-            client_phone = ''
-
-    # se não é provisório, exigimos nome e telefone
-    if not provisional and (not client_name or not client_phone):
-        return JsonResponse({'status':'error','message':'Nome e telefone obrigatórios'}, status=400)
 
     try:
         with transaction.atomic():
@@ -257,29 +231,22 @@ def book_appointment(request):
             booking = Booking.objects.create(
                 professional=professional,
                 service=service,
-                client_name=client_name,
-                client_phone=client_phone,
+                client_name=client_name or '',
+                client_phone=client_phone or '',
                 start_datetime=start_dt,
                 end_datetime=end_dt
             )
 
-            # Enviar e-mail simples notificando profissional (se tiver e-mail)
-            try:
-                if professional.email:
+            # tentar enviar e-mail para o profissional (se configurado)
+            if professional.email:
+                try:
                     subject = f"Novo agendamento - {service.name}"
-                    body = (
-                        f"Novo agendamento:\n\n"
-                        f"Profissional: {professional.name}\n"
-                        f"Serviço: {service.name}\n"
-                        f"Horário: {booking.start_datetime}\n"
-                        f"Cliente: {booking.client_name}\n"
-                        f"Telefone: {booking.client_phone}\n"
-                        f"{'(PROVISÓRIO - confirmar via WhatsApp)' if provisional else ''}"
-                    )
-                    send_mail(subject, body, 'no-reply@studio.local', [professional.email], fail_silently=True)
-            except Exception:
-                # não falha a criação se e-mail não for enviado
-                pass
+                    body = (f"Novo agendamento:\n\nServiço: {service.name}\nProfissional: {professional.name}\n"
+                            f"Cliente: {booking.client_name}\nTelefone: {booking.client_phone}\nInício: {booking.start_datetime}\n")
+                    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@example.com')
+                    send_mail(subject, body, from_email, [professional.email], fail_silently=True)
+                except Exception as em:
+                    print("Erro ao enviar e-mail:", em)
 
     except Exception as e:
         print("ERROR in book_appointment:", str(e))
@@ -293,7 +260,7 @@ def book_appointment(request):
         'end': booking.end_datetime.isoformat(),
         'client_name': booking.client_name,
         'client_phone': booking.client_phone
-    }})
+    }}, status=200)
 
 
 @require_POST
