@@ -1,6 +1,7 @@
 {% extends 'agendamentos/base.html' %}
 {% block content %}
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+  <!-- Serviços (coluna 1) -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Serviços</h2>
     <div class="space-y-3" id="services-list">
@@ -15,9 +16,16 @@
       </label>
       {% endfor %}
     </div>
+
+    <div class="mt-6">
+      <h3 class="font-semibold mb-2">Horários</h3>
+      <div id="slots" class="min-h-[220px] p-3 border rounded-lg bg-white">
+        <div class="text-sm text-gray-400">Escolha um serviço e um dia para ver horários.</div>
+      </div>
+    </div>
   </section>
 
-  <!-- Calendário em grade 7 colunas (sem badge) -->
+  <!-- Calendário (coluna 2) -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Escolha o dia</h2>
     <div class="grid grid-cols-7 gap-2" id="days-grid">
@@ -30,37 +38,41 @@
         </button>
       {% endfor %}
     </div>
-  </section>
 
-  <!-- central confirm area (coluna do meio) -->
-  <section class="p-4" id="confirm-area" style="display:block;">
-    <h2 class="font-semibold text-lg mb-4">Confirmar agendamento</h2>
-    <div>Horário: <strong class="confirm-start">--</strong></div>
-    <div class="mt-3">
-      <input name="client_name" placeholder="Nome" class="w-full p-2 border rounded mb-3" />
-      <input name="client_phone" placeholder="Telefone (55119...)" class="w-full p-2 border rounded mb-3" />
-      <div class="flex gap-2">
-        <button id="cancel-confirm" class="px-3 py-1 border rounded">Cancelar</button>
-        <button id="confirm-button" class="px-4 py-2 bg-pink-600 text-white rounded">Confirmar</button>
+    <!-- Área de confirmação ÚNICA (coluna central) -->
+    <div class="mt-6 p-4 bg-white rounded-lg border">
+      <h3 class="font-semibold mb-3">Confirmar agendamento</h3>
+      <div class="mb-3">Horário: <strong class="confirm-start">--</strong></div>
+      <input type="text" name="client_name" class="w-full p-2 border rounded mb-3 central-name" placeholder="Nome">
+      <input type="tel" name="client_phone" class="w-full p-2 border rounded mb-3 central-phone" placeholder="Telefone (55119...)">
+      <div class="flex gap-3">
+        <button id="central-cancel" class="px-3 py-2 border rounded">Cancelar</button>
+        <button id="central-confirm" class="px-4 py-2 bg-pink-600 text-white rounded">Confirmar</button>
       </div>
     </div>
   </section>
 
+  <!-- Coluna direita: (apenas espaço reservado, NÃO repetir confirmação) -->
   <section class="p-4">
-    <h2 class="font-semibold text-lg mb-4">Horários</h2>
-    <div id="slots" class="min-h-[220px] p-3 border rounded-lg bg-white">
-      <div class="text-sm text-gray-400">Escolha um serviço e um dia para ver horários.</div>
+    <h2 class="font-semibold text-lg mb-4">Informações</h2>
+    <div class="p-4 border rounded-lg bg-white text-sm text-gray-500">
+      Use o calendário e os horários para selecionar um slot. Você pode confirmar aqui ou usar o modal rápido (clicando no horário).
     </div>
   </section>
 </div>
 
 <!-- hidden professional id para garantir valor numérico no JS -->
 <input type="hidden" id="professional-id" value="{% if professional %}{{ professional.id }}{% endif %}" />
+<input type="hidden" id="selected-start-hidden" value="" />
+
+<!-- TOAST area (temporário) -->
+<div id="page-toast" style="position:fixed; right:20px; top:20px; z-index:9999; display:none; background:#111827; color:white; padding:12px 16px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.2)"></div>
 
 <script>
-/* --- Estado global (exposto) --- */
+/* --- Estado global --- */
 window.selectedServiceId = null;
 window.selectedDayIso = null;
+window.selectedStartIso = null; // guarda o slot selecionado para a confirmação central
 
 /* inicializa selectedServiceId com o radio checado (se houver) */
 const checkedService = document.querySelector('.service-radio:checked');
@@ -72,74 +84,24 @@ if (checkedService) {
 const professionalIdRaw = document.getElementById('professional-id')?.value || null;
 const professionalId = professionalIdRaw ? professionalIdRaw : null;
 
-/* função que abre o modal: definida aqui (global) para sempre existir */
-function openBookingForm(startIso, serviceId, profId){
-  const formatted = new Date(startIso).toLocaleString('pt-BR');
-  const html = `
-  <div id="modalWrap" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-    <div class="bg-white rounded-xl p-6 w-11/12 sm:w-96">
-      <h3 class="text-lg font-semibold mb-3">Confirmar agendamento</h3>
-      <div class="mb-2">Horário: <strong>${formatted}</strong></div>
-      <div class="mb-2"><input id="modal-name" placeholder="Nome" class="w-full p-2 border rounded" /></div>
-      <div class="mb-4"><input id="modal-phone" inputmode="tel" pattern="[0-9]*" placeholder="Telefone (55119...)" class="w-full p-2 border rounded" /></div>
-      <div class="flex gap-2 justify-end">
-        <button onclick="document.getElementById('modalWrap').remove()" class="px-3 py-1 border rounded">Cancelar</button>
-        <button id="confirm-book" class="px-4 py-2 bg-pink-600 text-white rounded">Confirmar</button>
-      </div>
-    </div>
-  </div>`;
-  const wrapper = document.createElement('div'); wrapper.innerHTML = html; document.body.appendChild(wrapper);
-
-  document.getElementById('confirm-book').addEventListener('click', async ()=>{
-    const name = document.getElementById('modal-name').value;
-    const phone = document.getElementById('modal-phone').value;
-    if(!name || !phone) return alert('Preencha nome e telefone');
-
-    // use profId (parâmetro) ou fallback global
-    const prof = profId || professionalId;
-    if(!prof) { alert('Profissional não configurado.'); document.getElementById('modalWrap').remove(); return; }
-
-    const payload = new FormData();
-    payload.append('professional_id', prof);
-    payload.append('service_id', serviceId);
-    payload.append('start', startIso);
-    payload.append('client_name', name);
-    payload.append('client_phone', phone);
-
-    const resp = await fetch('/book/', { method: 'POST', body: payload });
-    if(resp.status === 200){
-      const data = await resp.json();
-      alert('Agendamento criado!');
-      // simula notificação WhatsApp
-      await fetch('/notify-whatsapp/', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({booking_id: data.booking.id, to: 'professional'})
-      });
-      document.getElementById('modalWrap').remove();
-      // recarrega os horários do dia atual
-      if(window.selectedDayIso && window.selectedServiceId){
-        fetchSlots(window.selectedDayIso, window.selectedServiceId, prof);
-      } else {
-        location.reload();
-      }
-    } else if(resp.status === 409){
-      alert('Horário já reservado');
-      document.getElementById('modalWrap').remove();
-      if(window.selectedDayIso && window.selectedServiceId){
-        fetchSlots(window.selectedDayIso, window.selectedServiceId, prof);
-      } else {
-        location.reload();
-      }
-    } else {
-      const text = await resp.text();
-      alert('Erro ao criar agendamento: ' + (text||resp.status));
-      document.getElementById('modalWrap').remove();
-    }
-  });
+/* funçõess utilitárias */
+function showToast(text, ms=5000){
+  const t = document.getElementById('page-toast');
+  t.innerText = text; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(()=> t.style.display='none', ms);
+}
+function clearCentralForm(){
+  const cs = document.querySelector('.central-name');
+  const cp = document.querySelector('.central-phone');
+  const csStart = document.querySelector('.confirm-start');
+  if(cs) cs.value = '';
+  if(cp) cp.value = '';
+  if(csStart) csStart.innerText = '--';
+  window.selectedStartIso = null;
+  document.getElementById('selected-start-hidden').value = '';
 }
 
-/* Marcar visualmente o serviço selecionado */
+/* selecionar serviço via click visual */
 document.querySelectorAll('.service-item').forEach(item=>{
   item.addEventListener('click', ()=>{
     document.querySelectorAll('.service-item').forEach(i=>i.classList.remove('ring-2','ring-pink-300'));
@@ -151,7 +113,7 @@ document.querySelectorAll('.service-item').forEach(item=>{
   });
 });
 
-/* marcar dia clicado e solicitar slots */
+/* dias */
 document.querySelectorAll('.day-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.day-btn').forEach(b=>b.classList.remove('border-pink-600','bg-pink-50'));
@@ -161,23 +123,78 @@ document.querySelectorAll('.day-btn').forEach(btn=>{
       alert('Selecione um serviço primeiro');
       return;
     }
+    clearCentralForm();
     fetchSlots(window.selectedDayIso, window.selectedServiceId, professionalId);
   });
 });
 
-/* Delegation: capturar clicks nos botões de slot (funciona mesmo com innerHTML) */
+/* delegação de slots: captura clicks em botões gerados dinamicamente */
 const slotsContainer = document.getElementById('slots');
 slotsContainer.addEventListener('click', (e) => {
   const btn = e.target.closest('.slot-button');
   if(!btn) return;
+  // se for ocupado, nada
+  if(btn.classList.contains('occupied')) return;
   const start = btn.dataset.start;
   const serviceId = btn.dataset.service;
   const profId = btn.dataset.professional;
-  // chamar modal global
-  openBookingForm(start, serviceId, profId);
+  // preencher confirmação central com o horário e valores
+  const formatted = new Date(start).toLocaleString('pt-BR');
+  const csStart = document.querySelector('.confirm-start');
+  if(csStart) csStart.innerText = formatted;
+  window.selectedStartIso = start;
+  document.getElementById('selected-start-hidden').value = start;
 });
 
-/* fetchSlots com timeout e mensagens mais claras */
+/* botão Confirmar (área central) - tenta criar booking via /book/ */
+document.getElementById('central-confirm').addEventListener('click', async ()=>{
+  const name = document.querySelector('.central-name').value.trim();
+  const phone = document.querySelector('.central-phone').value.trim();
+  const start = window.selectedStartIso;
+  if(!start){ alert('Selecione um horário primeiro'); return; }
+  if(!name || !phone){ alert('Preencha nome e telefone'); return; }
+  const prof = professionalId;
+  const service = window.selectedServiceId;
+  const payload = new FormData();
+  payload.append('professional_id', prof);
+  payload.append('service_id', service);
+  payload.append('start', start);
+  payload.append('client_name', name);
+  payload.append('client_phone', phone);
+
+  try{
+    const resp = await fetch('/book/', { method: 'POST', body: payload });
+    if(resp.status === 200){
+      const data = await resp.json();
+      showToast('Agendamento registrado com sucesso', 4000);
+      // simular notificação
+      await fetch('/notify-whatsapp/', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({booking_id: data.booking.id, to: 'professional'})
+      });
+      clearCentralForm();
+      // atualizar slots
+      if(window.selectedDayIso && service) fetchSlots(window.selectedDayIso, service, prof);
+      else location.reload();
+    } else if(resp.status === 409){
+      alert('Horário já reservado por outra pessoa.');
+      if(window.selectedDayIso && window.selectedServiceId) fetchSlots(window.selectedDayIso, window.selectedServiceId, prof);
+    } else {
+      const txt = await resp.text();
+      alert('Erro ao criar agendamento: ' + (txt || resp.status));
+    }
+  }catch(err){
+    alert('Erro de conexão: ' + err.message);
+  }
+});
+
+/* central cancelar */
+document.getElementById('central-cancel').addEventListener('click', ()=>{
+  clearCentralForm();
+});
+
+/* fetchSlots como antes, mas garante class 'occupied' e data-* corretos */
 async function fetchSlots(day, serviceId, profId){
   if(!profId && !professionalId){
     document.getElementById('slots').innerHTML = '<div class="text-red-600">Nenhum profissional configurado.</div>';
@@ -196,12 +213,12 @@ async function fetchSlots(day, serviceId, profId){
     if(resp.status === 200){
       const html = await resp.text();
       document.getElementById('slots').innerHTML = html;
-      // revelar a área de confirmação central e atualizar horário visível
-      const confirmArea = document.getElementById('confirm-area');
-      if(confirmArea) confirmArea.style.display = 'block';
-    } else if (resp.status === 400){
-      const text = await resp.text();
-      document.getElementById('slots').innerHTML = `<div class="text-red-600">Parâmetros inválidos: ${text}</div>`;
+      // depois de inserir HTML, marcar botões .slot-button para UX
+      document.querySelectorAll('#slots .slot-button').forEach(b=>{
+        if(b.dataset.available === 'false' || b.classList.contains('occupied')){
+          b.classList.add('occupied');
+        }
+      });
     } else {
       const text = await resp.text();
       document.getElementById('slots').innerHTML = `<div class="text-red-600">Erro ao carregar horários (status ${resp.status}).</div>`;
@@ -217,64 +234,5 @@ async function fetchSlots(day, serviceId, profId){
     console.error('fetchSlots error', err);
   }
 }
-
-/* Cancel/Confirm central buttons behavior: limpar e atualizar */
-document.getElementById('cancel-confirm')?.addEventListener('click', ()=>{
-  // limpar e esconder
-  const area = document.getElementById('confirm-area');
-  if(area) { area.querySelectorAll('input').forEach(i=>i.value=''); area.style.display='none'; }
-});
-document.getElementById('confirm-button')?.addEventListener('click', async ()=>{
-  const name = document.querySelector('input[name="client_name"]').value.trim();
-  const phone = document.querySelector('input[name="client_phone"]').value.trim();
-  const startText = document.querySelector('.confirm-start')?.innerText || null;
-  if(!name || !phone){ alert('Preencha nome e telefone'); return; }
-  if(!window.selectedDayIso || !window.selectedServiceId){ alert('Selecione dia e serviço'); return; }
-
-  // construir start ISO: vamos reutilizar selectedDayIso e a hora do texto (se formatada)
-  // mas para simplicidade assumimos que a confirmação central foi preenchida pelo modal (ou user escolheu horário)
-  // então buscamos o slot que esteja marcado como "selected" no DOM
-  const selectedSlot = document.querySelector('.slot-button.selected, .slot-button[aria-pressed="true"]');
-  let startIso = null;
-  if(selectedSlot) startIso = selectedSlot.dataset.start;
-  if(!startIso){
-    // fallback: compor com selectedDayIso e hora do texto
-    const time = startText ? startText.split(' ')[1] : null;
-    if(time) startIso = window.selectedDayIso + 'T' + time + ':00';
-  }
-  if(!startIso){ alert('Não foi possível identificar o horário selecionado'); return; }
-
-  const payload = new FormData();
-  payload.append('professional_id', professionalId);
-  payload.append('service_id', window.selectedServiceId);
-  payload.append('start', startIso);
-  payload.append('client_name', name);
-  payload.append('client_phone', phone);
-
-  const resp = await fetch('/book/', { method:'POST', body: payload });
-  if(resp.status === 200){
-    const data = await resp.json();
-    alert('Agendamento criado!');
-    // notifica profissional (simulado)
-    await fetch('/notify-whatsapp/', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({booking_id: data.booking.id, to: 'professional'})
-    });
-    // limpar e esconder
-    const area = document.getElementById('confirm-area');
-    if(area) { area.querySelectorAll('input').forEach(i=>i.value=''); area.style.display='none'; }
-    // atualizar slots
-    if(window.selectedDayIso && window.selectedServiceId) fetchSlots(window.selectedDayIso, window.selectedServiceId, professionalId);
-    else location.reload();
-  } else if(resp.status === 409){
-    alert('Horário já reservado');
-    if(window.selectedDayIso && window.selectedServiceId) fetchSlots(window.selectedDayIso, window.selectedServiceId, professionalId);
-    else location.reload();
-  } else {
-    const t = await resp.text();
-    alert('Erro: ' + (t || resp.status));
-  }
-});
 </script>
 {% endblock %}
