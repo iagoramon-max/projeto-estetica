@@ -17,7 +17,7 @@
     </div>
   </section>
 
-    <!-- Calendário em grade 7 colunas (sem badge) -->
+  <!-- Calendário em grade 7 colunas (sem badge) -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Escolha o dia</h2>
     <div class="grid grid-cols-7 gap-2" id="days-grid">
@@ -32,6 +32,19 @@
     </div>
   </section>
 
+  <!-- central confirm area (coluna do meio) -->
+  <section class="p-4" id="confirm-area" style="display:block;">
+    <h2 class="font-semibold text-lg mb-4">Confirmar agendamento</h2>
+    <div>Horário: <strong class="confirm-start">--</strong></div>
+    <div class="mt-3">
+      <input name="client_name" placeholder="Nome" class="w-full p-2 border rounded mb-3" />
+      <input name="client_phone" placeholder="Telefone (55119...)" class="w-full p-2 border rounded mb-3" />
+      <div class="flex gap-2">
+        <button id="cancel-confirm" class="px-3 py-1 border rounded">Cancelar</button>
+        <button id="confirm-button" class="px-4 py-2 bg-pink-600 text-white rounded">Confirmar</button>
+      </div>
+    </div>
+  </section>
 
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Horários</h2>
@@ -183,6 +196,9 @@ async function fetchSlots(day, serviceId, profId){
     if(resp.status === 200){
       const html = await resp.text();
       document.getElementById('slots').innerHTML = html;
+      // revelar a área de confirmação central e atualizar horário visível
+      const confirmArea = document.getElementById('confirm-area');
+      if(confirmArea) confirmArea.style.display = 'block';
     } else if (resp.status === 400){
       const text = await resp.text();
       document.getElementById('slots').innerHTML = `<div class="text-red-600">Parâmetros inválidos: ${text}</div>`;
@@ -201,5 +217,64 @@ async function fetchSlots(day, serviceId, profId){
     console.error('fetchSlots error', err);
   }
 }
+
+/* Cancel/Confirm central buttons behavior: limpar e atualizar */
+document.getElementById('cancel-confirm')?.addEventListener('click', ()=>{
+  // limpar e esconder
+  const area = document.getElementById('confirm-area');
+  if(area) { area.querySelectorAll('input').forEach(i=>i.value=''); area.style.display='none'; }
+});
+document.getElementById('confirm-button')?.addEventListener('click', async ()=>{
+  const name = document.querySelector('input[name="client_name"]').value.trim();
+  const phone = document.querySelector('input[name="client_phone"]').value.trim();
+  const startText = document.querySelector('.confirm-start')?.innerText || null;
+  if(!name || !phone){ alert('Preencha nome e telefone'); return; }
+  if(!window.selectedDayIso || !window.selectedServiceId){ alert('Selecione dia e serviço'); return; }
+
+  // construir start ISO: vamos reutilizar selectedDayIso e a hora do texto (se formatada)
+  // mas para simplicidade assumimos que a confirmação central foi preenchida pelo modal (ou user escolheu horário)
+  // então buscamos o slot que esteja marcado como "selected" no DOM
+  const selectedSlot = document.querySelector('.slot-button.selected, .slot-button[aria-pressed="true"]');
+  let startIso = null;
+  if(selectedSlot) startIso = selectedSlot.dataset.start;
+  if(!startIso){
+    // fallback: compor com selectedDayIso e hora do texto
+    const time = startText ? startText.split(' ')[1] : null;
+    if(time) startIso = window.selectedDayIso + 'T' + time + ':00';
+  }
+  if(!startIso){ alert('Não foi possível identificar o horário selecionado'); return; }
+
+  const payload = new FormData();
+  payload.append('professional_id', professionalId);
+  payload.append('service_id', window.selectedServiceId);
+  payload.append('start', startIso);
+  payload.append('client_name', name);
+  payload.append('client_phone', phone);
+
+  const resp = await fetch('/book/', { method:'POST', body: payload });
+  if(resp.status === 200){
+    const data = await resp.json();
+    alert('Agendamento criado!');
+    // notifica profissional (simulado)
+    await fetch('/notify-whatsapp/', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({booking_id: data.booking.id, to: 'professional'})
+    });
+    // limpar e esconder
+    const area = document.getElementById('confirm-area');
+    if(area) { area.querySelectorAll('input').forEach(i=>i.value=''); area.style.display='none'; }
+    // atualizar slots
+    if(window.selectedDayIso && window.selectedServiceId) fetchSlots(window.selectedDayIso, window.selectedServiceId, professionalId);
+    else location.reload();
+  } else if(resp.status === 409){
+    alert('Horário já reservado');
+    if(window.selectedDayIso && window.selectedServiceId) fetchSlots(window.selectedDayIso, window.selectedServiceId, professionalId);
+    else location.reload();
+  } else {
+    const t = await resp.text();
+    alert('Erro: ' + (t || resp.status));
+  }
+});
 </script>
 {% endblock %}
