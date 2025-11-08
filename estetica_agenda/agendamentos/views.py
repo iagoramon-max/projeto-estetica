@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, time, date
 from django.views.decorators.http import require_POST
 from django.template.loader import render_to_string
 from django.views.decorators.csrf import csrf_exempt
+from django.core.mail import send_mail
+from django.conf import settings
 import traceback
 
 # configuração: granulação dos slots (15 minutos)
@@ -42,7 +44,9 @@ def parse_day_to_date(day_str):
     Retorna datetime.date
     """
     try:
-        return datetime.fromisoformat(day_str).date()
+        # Se vier "YYYY-MM-DD" -> fromisoformat funciona
+        if len(day_str.split('T')[0]) == 10:
+            return datetime.fromisoformat(day_str.split('T')[0]).date()
     except Exception:
         pass
 
@@ -93,7 +97,6 @@ def generate_slots_for_day(day_date, service_duration_min):
     end_of_day = datetime.combine(day_date, end_time)
 
     # tornar aware (se o projeto usa USE_TZ=True, fazemos aware)
-    # use make_aware_if_naive para ser seguro
     cur = make_aware_if_naive(cur)
     end_of_day = make_aware_if_naive(end_of_day)
 
@@ -203,10 +206,20 @@ def slots_for_day(request):
 @require_POST
 @csrf_exempt
 def book_appointment(request):
+    """
+    Recebe POST (form-data ou json) com:
+      - professional_id
+      - service_id
+      - start (ISO datetime: YYYY-MM-DDTHH:MM:SS)
+      - client_name
+      - client_phone
+
+    Cria booking, envia e-mail ao profissional (se e-mail existir) e retorna JSON.
+    """
     import json
     try:
-        if request.content_type == 'application/json':
-            payload = json.loads(request.body)
+        if request.content_type and 'application/json' in request.content_type:
+            payload = json.loads(request.body.decode('utf-8') or '{}')
         else:
             payload = request.POST.dict()
     except:
@@ -216,8 +229,8 @@ def book_appointment(request):
         prof_id = int(payload.get('professional_id'))
         service_id = int(payload.get('service_id'))
         start_iso = payload.get('start')
-        client_name = payload.get('client_name')
-        client_phone = payload.get('client_phone')
+        client_name = (payload.get('client_name') or '').strip()
+        client_phone = (payload.get('client_phone') or '').strip()
     except Exception:
         return HttpResponseBadRequest('Dados inválidos')
 
@@ -228,7 +241,7 @@ def book_appointment(request):
         return HttpResponseBadRequest('Profissional ou serviço inválido')
 
     try:
-        # parse start ISO em aware/naive: fromisoformat produz naive se sem offset, então convertemos
+        # parse start ISO em aware/naive: datetime.fromisoformat -> pode retornar naive
         start_dt = datetime.fromisoformat(start_iso)
     except Exception:
         return HttpResponseBadRequest('Formato de data inválido')
@@ -241,6 +254,7 @@ def book_appointment(request):
         with transaction.atomic():
             if is_conflicting(professional, start_dt, end_dt):
                 return JsonResponse({'status':'error','message':'Horário já reservado'}, status=409)
+
             booking = Booking.objects.create(
                 professional=professional,
                 service=service,
@@ -249,11 +263,40 @@ def book_appointment(request):
                 start_datetime=start_dt,
                 end_datetime=end_dt
             )
+
+            # Enviar e-mail ao profissional (caso tenha email)
+            try:
+                prof_email = (professional.email or '').strip()
+                if prof_email:
+                    subject = f'Novo agendamento: {service.name} — {start_dt.strftime("%d/%m/%Y %H:%M")}'
+                    body = (
+                        f"Olá {professional.name},\n\n"
+                        f"Um novo agendamento foi criado no sistema.\n\n"
+                        f"Serviço: {service.name}\n"
+                        f"Data/Hora: {start_dt.strftime('%d/%m/%Y %H:%M')}\n"
+                        f"Cliente: {client_name or '(não informado)'}\n"
+                        f"Telefone: {client_phone or '(não informado)'}\n"
+                        f"ID: {booking.id}\n\n"
+                        "Se este agendamento foi criado via WhatsApp, verifique a conversa para confirmar.\n"
+                    )
+                    send_mail(
+                        subject,
+                        body,
+                        getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com'),
+                        [prof_email],
+                        fail_silently=False
+                    )
+            except Exception as mail_err:
+                # não quebrar o fluxo de criação se o email falhar; log para debug
+                print("Erro ao enviar email:", mail_err)
+                traceback.print_exc()
+
     except Exception as e:
         print("ERROR in book_appointment:", str(e))
         traceback.print_exc()
         return JsonResponse({'status':'error','message':str(e)}, status=500)
 
+    # sucesso
     return JsonResponse({'status':'ok', 'booking':{
         'id': booking.id,
         'service': service.name,
@@ -261,15 +304,18 @@ def book_appointment(request):
         'end': booking.end_datetime.isoformat(),
         'client_name': booking.client_name,
         'client_phone': booking.client_phone
-    }})
+    }}, status=200)
 
 
 @require_POST
 @csrf_exempt
 def notify_whatsapp(request):
+    """
+    Endpoint de simulação — pode ser chamado para log/integração futura.
+    """
     import json
     try:
-        payload = json.loads(request.body)
+        payload = json.loads(request.body.decode('utf-8') or '{}')
     except:
         payload = request.POST.dict()
     booking_id = payload.get('booking_id')
