@@ -51,6 +51,25 @@
       .btn { padding:.55rem .9rem; border-radius:.6rem; }
       .btn-primary { background:#ec4899; color:white; border:none; }
       .btn-ghost { background:white; border:1px solid #e5e7eb; color:#111827; }
+
+      /* toast */
+      .site-toast {
+        position: fixed;
+        top: 18px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 11000;
+        min-width: 220px;
+        max-width: 90%;
+        background: rgba(17,24,39,0.95);
+        color: #fff;
+        padding: 12px 16px;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+        display: none;
+        font-weight: 600;
+      }
+
     </style>
 
     {% block head %}{% endblock %}
@@ -89,237 +108,27 @@
       Protótipo para apresentação acadêmica — notificações WhatsApp simuladas.
     </footer>
 
-    <!-- Script: modal + reserva provisória, toasts e refresh -->
-<script>
+    <!-- TOAST -->
+    <div id="siteToast" class="site-toast" role="status" aria-live="polite"></div>
+
+    <!-- Script: modal e utilitários -->
+   <script>
 (function(){
-  const WA_NUMBER = "5512991613940";
-
-  /* --- small utility: show a temporary toast message --- */
-  function showToast(msg, duration=5000){
-    const id = 'site-toast';
-    let t = document.getElementById(id);
-    if(t) t.remove();
-    t = document.createElement('div');
-    t.id = id;
-    t.style.cssText = 'position:fixed;right:20px;top:20px;z-index:10050;background:#111827;color:#fff;padding:12px 16px;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,0.18);';
-    t.innerText = msg;
-    document.body.appendChild(t);
-    setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, duration);
+  const TOAST = document.getElementById('siteToast');
+  function showToast(text, duration=5000){
+    if(!TOAST) return;
+    TOAST.innerText = text;
+    TOAST.style.display = 'block';
+    clearTimeout(TOAST._t);
+    TOAST._t = setTimeout(()=> { TOAST.style.display = 'none'; }, duration);
   }
 
-  function getSelectedDayIso(){
-    if(window.selectedDayIso) return window.selectedDayIso;
-    const active = document.querySelector('#days-grid button[aria-pressed="true"], #days-grid button.active, #days-grid button.selected, #days-grid button[aria-current="true"]');
-    if(active) return active.dataset.iso || active.getAttribute('data-iso') || null;
-    const any = document.querySelector('#days-grid button[data-iso], [data-iso]');
-    return any ? any.dataset.iso : null;
-  }
+  // Expor showToast globalmente para outros scripts (index.js usa)
+  window.showSiteToast = showToast;
 
-  function refreshSlots(profId){
-    try{
-      if(typeof fetchSlots === 'function' && window.selectedDayIso && window.selectedServiceId){
-        fetchSlots(window.selectedDayIso, window.selectedServiceId, profId || null);
-        return;
-      }
-    }catch(e){}
-    // fallback: recarrega a página
-    location.reload();
-  }
+  // (opcional) Feather icons
+  // feather.replace() será chamado no final do body
 
-  function findTimeButton(target){
-    let btn = target.closest('[data-start], [data-start-iso], [data-display]');
-    if(btn) return btn;
-    const maybe = target.closest('#slots button, #slots .slot, .slot-button, button.slot-button, .slottime, .time-btn, .slot');
-    return maybe;
-  }
-
-  document.addEventListener('click', function(e){
-    const btn = findTimeButton(e.target);
-    if(!btn) return;
-
-    const startIso = btn.getAttribute('data-start') || btn.getAttribute('data-start-iso') || null;
-    const display = btn.getAttribute('data-display') || (btn.innerText ? btn.innerText.trim() : null);
-    const svcNameAttr = btn.getAttribute('data-service-name') || null;
-    const svcIdAttr = btn.getAttribute('data-service') || btn.getAttribute('data-service-id') || null;
-    const profAttr = btn.getAttribute('data-professional') || btn.getAttribute('data-professional-id') || null;
-
-    let finalStartIso = startIso;
-    let finalDisplay = display;
-    if(!finalStartIso){
-      const dayIso = getSelectedDayIso();
-      const timeText = (display || btn.innerText || '').trim();
-      if(dayIso && timeText){
-        const time = timeText.split(/\s/)[0];
-        finalStartIso = dayIso + 'T' + time + ':00';
-        const parts = dayIso.split('-');
-        finalDisplay = parts[2] + '/' + parts[1] + '/' + parts[0] + ' ' + time;
-      }
-    } else {
-      if(!finalDisplay){
-        try { const d = new Date(finalStartIso); finalDisplay = d.toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' }); } catch(e){}
-      }
-    }
-
-    if(!finalStartIso && !finalDisplay) return;
-
-    openBookingModal(finalStartIso, finalDisplay, {
-      button: btn,
-      service_name: svcNameAttr || document.querySelector('.service-item .font-medium')?.innerText || '',
-      service_id: svcIdAttr || window.selectedServiceId || (document.querySelector('input[name="service_id"]')?.value) || '',
-      professional_id: profAttr || window.selectedProfessionalId || (document.querySelector('input[name="professional_id"]')?.value) || ''
-    });
-  }, false);
-
-  function clearAndHideCentralConfirm(){
-    // central confirm area (se existir, damos um id no index.html: id="confirm-area")
-    const area = document.getElementById('confirm-area');
-    if(!area) return;
-    // limpar inputs
-    area.querySelectorAll('input').forEach(i=>i.value='');
-    // esconder a área
-    area.style.display = 'none';
-  }
-
-  function openBookingModal(startIso, displayStr, meta){
-    const sourceBtn = meta.button;
-    const serviceName = meta.service_name || '';
-    const serviceId = meta.service_id || '';
-    const professionalId = meta.professional_id || '';
-
-    const old = document.getElementById('wa-modal-wrap'); if(old) old.remove();
-
-    const modal = document.createElement('div');
-    modal.id = 'wa-modal-wrap';
-    modal.className = 'wa-modal-backdrop';
-    modal.innerHTML = `
-      <div class="wa-modal" role="dialog" aria-modal="true">
-        <h3 style="font-weight:600;margin-bottom:8px">Agendamento — ${displayStr}</h3>
-        <input id="wa_name" class="wa-input" placeholder="Seu nome" />
-        <input id="wa_phone" class="wa-input" placeholder="Telefone (5511...)" inputmode="tel" />
-        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:6px;">
-          <button id="wa_cancel" class="btn btn-ghost">Cancelar</button>
-          <button id="wa_whats" class="btn btn-primary">Agendar via WhatsApp</button>
-          <button id="wa_book" class="btn" style="background:#10B981;color:white;border:none;border-radius:.5rem;">Reservar no site</button>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(modal);
-
-    document.getElementById('wa_cancel').addEventListener('click', ()=> modal.remove());
-
-    async function tryCreateBooking(name, phone, provisional=false){
-      try{
-        const form = new FormData();
-        form.append('professional_id', professionalId || '');
-        form.append('service_id', serviceId || '');
-        form.append('start', startIso);
-        form.append('client_name', name || '');
-        form.append('client_phone', phone || '');
-        if(provisional) form.append('provisional', '1');
-
-        const res = await fetch('/book/', { method:'POST', body: form });
-        return res;
-      }catch(err){
-        console.error('create booking error', err);
-        throw err;
-      }
-    }
-
-    document.getElementById('wa_whats').addEventListener('click', async ()=>{
-      const name = document.getElementById('wa_name').value.trim();
-      const phone = document.getElementById('wa_phone').value.trim();
-
-      // se sem nome/telefone: criar reserva PROVISÓRIA e abrir wa.me
-      if(!name && !phone){
-        const ok = confirm('Abrir WhatsApp e bloquear horário provisoriamente?');
-        if(!ok) return;
-        try{
-          const res = await tryCreateBooking('', '', true); // provisional
-          if(res && res.ok){
-            const data = await res.json().catch(()=>null);
-            const message = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${displayStr}.`;
-            // abrir link wa.me
-            window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
-            showToast('Horário reservado provisoriamente. Continue no WhatsApp.', 5000);
-            modal.remove();
-            clearAndHideCentralConfirm();
-            refreshSlots(professionalId);
-          } else if(res && res.status === 409){
-            alert('Horário já reservado por outra pessoa.');
-            modal.remove();
-            refreshSlots(professionalId);
-          } else {
-            const txt = await res.text().catch(()=>null);
-            alert('Erro ao bloquear horário: ' + (txt || res.status));
-          }
-        }catch(err){
-          const ok2 = confirm('Erro ao bloquear horário. Deseja abrir o WhatsApp mesmo assim?');
-          if(ok2){
-            const message = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${displayStr}.`;
-            window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
-            modal.remove();
-          }
-        }
-        return;
-      }
-
-      // se tem nome/telefone: cria reserva DEFINITIVA e abre wa.me com dados
-      try{
-        const res = await tryCreateBooking(name, phone, false);
-        if(res && res.ok){
-          const data = await res.json().catch(()=>null);
-          const message = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${displayStr}. Nome: ${name}. Telefone: ${phone}`;
-          window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
-          showToast('Agendamento criado. Continue no WhatsApp.', 5000);
-          modal.remove();
-          clearAndHideCentralConfirm();
-          refreshSlots(professionalId);
-        } else if(res && res.status === 409){
-          alert('Horário já reservado por outra pessoa.');
-          modal.remove();
-          refreshSlots(professionalId);
-        } else {
-          const txt = await res.text().catch(()=>null);
-          alert('Erro ao criar agendamento: ' + (txt || res.status));
-        }
-      }catch(err){
-        const ok = confirm('Ocorreu erro ao criar reserva no site. Deseja abrir o WhatsApp mesmo assim?');
-        if(ok){
-          const message = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${displayStr}. Nome: ${name}. Telefone: ${phone}`;
-          window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
-          modal.remove();
-        }
-      }
-    });
-
-    document.getElementById('wa_book').addEventListener('click', async ()=>{
-      const name = document.getElementById('wa_name').value.trim();
-      const phone = document.getElementById('wa_phone').value.trim();
-      if(!name || !phone){ alert('Preencha nome e telefone para reservar no site.'); return; }
-
-      try{
-        const res = await tryCreateBooking(name, phone, false);
-        if(res && res.ok){
-          const data = await res.json().catch(()=>null);
-          showToast('Agendamento registrado com sucesso.', 5000);
-          modal.remove();
-          clearAndHideCentralConfirm();
-          refreshSlots(professionalId);
-        } else if (res && res.status === 409){
-          alert('Horário já reservado por outra pessoa.');
-          modal.remove();
-          refreshSlots(professionalId);
-        } else {
-          const text = await res.text();
-          alert('Erro ao criar agendamento: ' + (text || res.status));
-        }
-      }catch(err){
-        alert('Erro ao conectar com o servidor: ' + (err.message || err));
-      }
-    });
-  }
-
-  window.openBookingModal = openBookingModal;
 })();
 </script>
 
