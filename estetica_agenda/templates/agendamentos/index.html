@@ -1,7 +1,6 @@
 {% extends 'agendamentos/base.html' %}
 {% block content %}
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-  <!-- Serviços (coluna 1) -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Serviços</h2>
     <div class="space-y-3" id="services-list">
@@ -25,7 +24,7 @@
     </div>
   </section>
 
-  <!-- Calendário (coluna 2) -->
+  <!-- Calendário em grade 7 colunas (sem badge) -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Escolha o dia</h2>
     <div class="grid grid-cols-7 gap-2" id="days-grid">
@@ -38,70 +37,168 @@
         </button>
       {% endfor %}
     </div>
-
-    <!-- Área de confirmação ÚNICA (coluna central) -->
-    <div class="mt-6 p-4 bg-white rounded-lg border">
-      <h3 class="font-semibold mb-3">Confirmar agendamento</h3>
-      <div class="mb-3">Horário: <strong class="confirm-start">--</strong></div>
-      <input type="text" name="client_name" class="w-full p-2 border rounded mb-3 central-name" placeholder="Nome">
-      <input type="tel" name="client_phone" class="w-full p-2 border rounded mb-3 central-phone" placeholder="Telefone (55119...)">
-      <div class="flex gap-3">
-        <button id="central-cancel" class="px-3 py-2 border rounded">Cancelar</button>
-        <button id="central-confirm" class="px-4 py-2 bg-pink-600 text-white rounded">Confirmar</button>
-      </div>
-    </div>
   </section>
 
-  <!-- Coluna direita: (apenas espaço reservado, NÃO repetir confirmação) -->
+  <!-- Coluna direita: instruções / informações -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Informações</h2>
-    <div class="p-4 border rounded-lg bg-white text-sm text-gray-500">
-      Use o calendário e os horários para selecionar um slot. Você pode confirmar aqui ou usar o modal rápido (clicando no horário).
+    <div class="p-4 border rounded-lg bg-white text-sm text-gray-600">
+      Use o calendário e os horários para selecionar um slot. Clique no horário para abrir o modal rápido (preencha nome e telefone). Você pode escolher "Agendar via WhatsApp" (abre wa.me) ou "Reservar no site".
     </div>
   </section>
 </div>
 
 <!-- hidden professional id para garantir valor numérico no JS -->
 <input type="hidden" id="professional-id" value="{% if professional %}{{ professional.id }}{% endif %}" />
-<input type="hidden" id="selected-start-hidden" value="" />
-
-<!-- TOAST area (temporário) -->
-<div id="page-toast" style="position:fixed; right:20px; top:20px; z-index:9999; display:none; background:#111827; color:white; padding:12px 16px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.2)"></div>
 
 <script>
-/* --- Estado global --- */
+/* --- Estado global (exposto) --- */
 window.selectedServiceId = null;
 window.selectedDayIso = null;
-window.selectedStartIso = null; // guarda o slot selecionado para a confirmação central
 
 /* inicializa selectedServiceId com o radio checado (se houver) */
-const checkedService = document.querySelector('.service-radio:checked');
-if (checkedService) {
-  window.selectedServiceId = checkedService.value;
-}
+(function initSelectedService(){
+  const checkedService = document.querySelector('.service-radio:checked');
+  if (checkedService) window.selectedServiceId = checkedService.value;
+})();
 
 /* pega professional id de forma segura */
 const professionalIdRaw = document.getElementById('professional-id')?.value || null;
 const professionalId = professionalIdRaw ? professionalIdRaw : null;
 
-/* funçõess utilitárias */
-function showToast(text, ms=5000){
-  const t = document.getElementById('page-toast');
-  t.innerText = text; t.style.display = 'block';
-  clearTimeout(t._h); t._h = setTimeout(()=> t.style.display='none', ms);
-}
-function clearCentralForm(){
-  const cs = document.querySelector('.central-name');
-  const cp = document.querySelector('.central-phone');
-  const csStart = document.querySelector('.confirm-start');
-  if(cs) cs.value = '';
-  if(cp) cp.value = '';
-  if(csStart) csStart.innerText = '--';
-  window.selectedStartIso = null;
-  document.getElementById('selected-start-hidden').value = '';
+/* função que abre o modal: definida aqui (global) para sempre existir */
+function openBookingModal(startIso, displayStr, meta){
+  // meta: {service_name, service_id, professional_id}
+  const serviceName = meta?.service_name || '';
+  const svcId = meta?.service_id || '';
+  const profId = meta?.professional_id || professionalId;
+
+  // remove modal se já existir
+  const existing = document.getElementById('wa-modal-wrap'); if(existing) existing.remove();
+
+  const d = new Date(startIso);
+  const formatted = (isNaN(d.getTime())) ? displayStr || startIso : d.toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' });
+
+  const modal = document.createElement('div');
+  modal.id = 'wa-modal-wrap';
+  modal.className = 'wa-modal-backdrop';
+  modal.innerHTML = `
+    <div class="wa-modal" role="dialog" aria-modal="true">
+      <h3 style="font-weight:600;margin-bottom:8px">Agendamento — ${formatted}</h3>
+      <input id="wa_name" class="wa-input" placeholder="Seu nome" />
+      <input id="wa_phone" class="wa-input" placeholder="Telefone (55119...)" inputmode="tel" />
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:6px;">
+        <button id="wa_cancel" class="btn btn-ghost">Cancelar</button>
+        <button id="wa_whats" class="btn btn-primary">Agendar via WhatsApp</button>
+        <button id="wa_book" class="btn" style="background:#10B981;color:white;border:none;border-radius:.5rem;">Reservar no site</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  document.getElementById('wa_cancel').addEventListener('click', ()=> modal.remove());
+
+  async function tryCreateBooking(name, phone){
+    try{
+      const form = new FormData();
+      form.append('professional_id', profId || '');
+      form.append('service_id', svcId || '');
+      form.append('start', startIso || '');
+      form.append('client_name', name || '');
+      form.append('client_phone', phone || '');
+
+      const res = await fetch('/book/', { method:'POST', body: form });
+      return res;
+    }catch(err){
+      console.error('create booking error', err);
+      throw err;
+    }
+  }
+
+  document.getElementById('wa_whats').addEventListener('click', async ()=>{
+    const name = document.getElementById('wa_name').value.trim();
+    const phone = document.getElementById('wa_phone').value.trim();
+
+    if(!name && !phone){
+      const ok = confirm('Você não informou nome nem telefone. Deseja abrir o WhatsApp sem registrar o agendamento no site?');
+      if(!ok) return;
+      const msg = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${formatted}.`;
+      window.open(`https://wa.me/5512991613940?text=${encodeURIComponent(msg)}`, '_blank');
+      modal.remove();
+      return;
+    }
+
+    try{
+      const res = await tryCreateBooking(name, phone);
+      if(res && res.ok){
+        const data = await res.json().catch(()=>null);
+        // booking criado, abrir wa.me com dados e atualizar UI
+        const message = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${formatted}. Nome: ${name}. Telefone: ${phone}`;
+        window.open(`https://wa.me/5512991613940?text=${encodeURIComponent(message)}`, '_blank');
+        if(window.showSiteToast) window.showSiteToast('Continue no WhatsApp para finalizar — reserva bloqueada no site.');
+        modal.remove();
+        // atualizar slots
+        if(window.selectedDayIso && window.selectedServiceId){
+          fetchSlots(window.selectedDayIso, window.selectedServiceId, profId);
+        } else {
+          setTimeout(()=>location.reload(), 800);
+        }
+      } else if (res && res.status === 409){
+        alert('Horário já reservado por outra pessoa.');
+        modal.remove();
+        if(window.selectedDayIso && window.selectedServiceId){
+          fetchSlots(window.selectedDayIso, window.selectedServiceId, profId);
+        } else {
+          location.reload();
+        }
+      } else {
+        const text = await res.text().catch(()=>null);
+        alert('Erro ao criar agendamento no site: ' + (text || res.status || 'erro'));
+      }
+    }catch(err){
+      const ok = confirm('Ocorreu erro ao criar reserva no site. Deseja abrir o WhatsApp mesmo assim?');
+      if(ok){
+        const message = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${formatted}. Nome: ${name}. Telefone: ${phone}`;
+        window.open(`https://wa.me/5512991613940?text=${encodeURIComponent(message)}`, '_blank');
+        modal.remove();
+      }
+    }
+  });
+
+  document.getElementById('wa_book').addEventListener('click', async ()=>{
+    const name = document.getElementById('wa_name').value.trim();
+    const phone = document.getElementById('wa_phone').value.trim();
+    if(!name || !phone){ alert('Preencha nome e telefone para reservar no site.'); return; }
+
+    try{
+      const res = await tryCreateBooking(name, phone);
+      if(res && res.ok){
+        if(window.showSiteToast) window.showSiteToast('Agendamento registrado com sucesso.');
+        modal.remove();
+        if(window.selectedDayIso && window.selectedServiceId){
+          fetchSlots(window.selectedDayIso, window.selectedServiceId, profId);
+        } else {
+          setTimeout(()=>location.reload(), 800);
+        }
+      } else if (res && res.status === 409){
+        alert('Horário já reservado por outra pessoa.');
+        modal.remove();
+        if(window.selectedDayIso && window.selectedServiceId){
+          fetchSlots(window.selectedDayIso, window.selectedServiceId, profId);
+        } else {
+          location.reload();
+        }
+      } else {
+        const text = await res.text().catch(()=>null);
+        alert('Erro ao criar agendamento: ' + (text || res.status || 'erro'));
+      }
+    }catch(err){
+      alert('Erro ao conectar com o servidor: ' + (err.message || err));
+    }
+  });
 }
 
-/* selecionar serviço via click visual */
+/* Marcar visualmente o serviço selecionado */
 document.querySelectorAll('.service-item').forEach(item=>{
   item.addEventListener('click', ()=>{
     document.querySelectorAll('.service-item').forEach(i=>i.classList.remove('ring-2','ring-pink-300'));
@@ -113,7 +210,7 @@ document.querySelectorAll('.service-item').forEach(item=>{
   });
 });
 
-/* dias */
+/* marcar dia clicado e solicitar slots */
 document.querySelectorAll('.day-btn').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     document.querySelectorAll('.day-btn').forEach(b=>b.classList.remove('border-pink-600','bg-pink-50'));
@@ -123,78 +220,23 @@ document.querySelectorAll('.day-btn').forEach(btn=>{
       alert('Selecione um serviço primeiro');
       return;
     }
-    clearCentralForm();
     fetchSlots(window.selectedDayIso, window.selectedServiceId, professionalId);
   });
 });
 
-/* delegação de slots: captura clicks em botões gerados dinamicamente */
+/* Delegation: capturar clicks nos botões de slot (funciona mesmo com innerHTML) */
 const slotsContainer = document.getElementById('slots');
 slotsContainer.addEventListener('click', (e) => {
-  const btn = e.target.closest('.slot-button');
+  const btn = e.target.closest('[data-start]');
   if(!btn) return;
-  // se for ocupado, nada
-  if(btn.classList.contains('occupied')) return;
-  const start = btn.dataset.start;
-  const serviceId = btn.dataset.service;
-  const profId = btn.dataset.professional;
-  // preencher confirmação central com o horário e valores
-  const formatted = new Date(start).toLocaleString('pt-BR');
-  const csStart = document.querySelector('.confirm-start');
-  if(csStart) csStart.innerText = formatted;
-  window.selectedStartIso = start;
-  document.getElementById('selected-start-hidden').value = start;
+  const start = btn.dataset.start || btn.getAttribute('data-start-iso') || btn.getAttribute('data-start');
+  const display = btn.textContent ? btn.textContent.trim() : '';
+  const svcId = btn.dataset.service || window.selectedServiceId;
+  const profId = btn.dataset.professional || professionalId;
+  openBookingModal(start, display, { service_name: btn.dataset.serviceName || '', service_id: svcId, professional_id: profId });
 });
 
-/* botão Confirmar (área central) - tenta criar booking via /book/ */
-document.getElementById('central-confirm').addEventListener('click', async ()=>{
-  const name = document.querySelector('.central-name').value.trim();
-  const phone = document.querySelector('.central-phone').value.trim();
-  const start = window.selectedStartIso;
-  if(!start){ alert('Selecione um horário primeiro'); return; }
-  if(!name || !phone){ alert('Preencha nome e telefone'); return; }
-  const prof = professionalId;
-  const service = window.selectedServiceId;
-  const payload = new FormData();
-  payload.append('professional_id', prof);
-  payload.append('service_id', service);
-  payload.append('start', start);
-  payload.append('client_name', name);
-  payload.append('client_phone', phone);
-
-  try{
-    const resp = await fetch('/book/', { method: 'POST', body: payload });
-    if(resp.status === 200){
-      const data = await resp.json();
-      showToast('Agendamento registrado com sucesso', 4000);
-      // simular notificação
-      await fetch('/notify-whatsapp/', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({booking_id: data.booking.id, to: 'professional'})
-      });
-      clearCentralForm();
-      // atualizar slots
-      if(window.selectedDayIso && service) fetchSlots(window.selectedDayIso, service, prof);
-      else location.reload();
-    } else if(resp.status === 409){
-      alert('Horário já reservado por outra pessoa.');
-      if(window.selectedDayIso && window.selectedServiceId) fetchSlots(window.selectedDayIso, window.selectedServiceId, prof);
-    } else {
-      const txt = await resp.text();
-      alert('Erro ao criar agendamento: ' + (txt || resp.status));
-    }
-  }catch(err){
-    alert('Erro de conexão: ' + err.message);
-  }
-});
-
-/* central cancelar */
-document.getElementById('central-cancel').addEventListener('click', ()=>{
-  clearCentralForm();
-});
-
-/* fetchSlots como antes, mas garante class 'occupied' e data-* corretos */
+/* fetchSlots com timeout e mensagens mais claras */
 async function fetchSlots(day, serviceId, profId){
   if(!profId && !professionalId){
     document.getElementById('slots').innerHTML = '<div class="text-red-600">Nenhum profissional configurado.</div>';
@@ -213,12 +255,9 @@ async function fetchSlots(day, serviceId, profId){
     if(resp.status === 200){
       const html = await resp.text();
       document.getElementById('slots').innerHTML = html;
-      // depois de inserir HTML, marcar botões .slot-button para UX
-      document.querySelectorAll('#slots .slot-button').forEach(b=>{
-        if(b.dataset.available === 'false' || b.classList.contains('occupied')){
-          b.classList.add('occupied');
-        }
-      });
+    } else if (resp.status === 400){
+      const text = await resp.text();
+      document.getElementById('slots').innerHTML = `<div class="text-red-600">Parâmetros inválidos: ${text}</div>`;
     } else {
       const text = await resp.text();
       document.getElementById('slots').innerHTML = `<div class="text-red-600">Erro ao carregar horários (status ${resp.status}).</div>`;
