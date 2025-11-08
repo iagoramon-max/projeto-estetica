@@ -94,7 +94,6 @@
 (function(){
   const WA_NUMBER = "5512991613940";
 
-  // tenta recuperar a data selecionada (se sua página define window.selectedDayIso ou similar)
   function getSelectedDayIso(){
     if(window.selectedDayIso) return window.selectedDayIso;
     const active = document.querySelector('#days-grid button[aria-pressed="true"], #days-grid button.active, #days-grid button.selected, #days-grid button[aria-current="true"]');
@@ -103,24 +102,20 @@
     return any ? any.dataset.iso : null;
   }
 
-  // helper para atualizar slots após reserva
   function refreshSlots(profId){
     try{
       if(typeof fetchSlots === 'function' && window.selectedDayIso && window.selectedServiceId){
         fetchSlots(window.selectedDayIso, window.selectedServiceId, profId || null);
         return;
       }
-      // tenta clicar no botão do dia para acionar reload do calendário
       const sel = document.querySelector('#days-grid button[aria-pressed="true"], #days-grid button.active, #days-grid button.selected') ||
                   document.querySelector('#days-grid button[data-iso="' + (window.selectedDayIso || '') + '"]') ||
                   document.querySelector('#days-grid button[data-iso]');
       if(sel) { sel.click(); return; }
     } catch(e){}
-    // fallback
     location.reload();
   }
 
-  // encontra botão/elemento do horário no clique
   function findTimeButton(target){
     let btn = target.closest('[data-start], [data-start-iso], [data-display]');
     if(btn) return btn;
@@ -132,9 +127,11 @@
     const btn = findTimeButton(e.target);
     if(!btn) return;
 
-    // obter valores
     const startIso = btn.getAttribute('data-start') || btn.getAttribute('data-start-iso') || null;
     const display = btn.getAttribute('data-display') || (btn.innerText ? btn.innerText.trim() : null);
+    const svcNameAttr = btn.getAttribute('data-service-name') || null;
+    const svcIdAttr = btn.getAttribute('data-service') || btn.getAttribute('data-service-id') || null;
+    const profAttr = btn.getAttribute('data-professional') || btn.getAttribute('data-professional-id') || null;
 
     let finalStartIso = startIso;
     let finalDisplay = display;
@@ -154,11 +151,21 @@
     }
 
     if(!finalStartIso && !finalDisplay) return;
-    openBookingModal(finalStartIso, finalDisplay, btn);
+
+    openBookingModal(finalStartIso, finalDisplay, {
+      button: btn,
+      service_name: svcNameAttr || document.querySelector('.service-item .font-medium')?.innerText || '',
+      service_id: svcIdAttr || window.selectedServiceId || (document.querySelector('input[name="service_id"]')?.value) || '',
+      professional_id: profAttr || window.selectedProfessionalId || (document.querySelector('input[name="professional_id"]')?.value) || ''
+    });
   }, false);
 
-  // cria modal
-  function openBookingModal(startIso, displayStr, sourceBtn){
+  function openBookingModal(startIso, displayStr, meta){
+    const sourceBtn = meta.button;
+    const serviceName = meta.service_name || '';
+    const serviceId = meta.service_id || '';
+    const professionalId = meta.professional_id || '';
+
     const old = document.getElementById('wa-modal-wrap'); if(old) old.remove();
 
     const modal = document.createElement('div');
@@ -180,109 +187,108 @@
 
     document.getElementById('wa_cancel').addEventListener('click', ()=> modal.remove());
 
-    // Handler do WhatsApp: se nome/telefone preenchidos, cria reserva antes de abrir o wa.me
-    document.getElementById('wa_whats').addEventListener('click', async ()=>{
-      const name = document.getElementById('wa_name').value.trim();
-      const phone = document.getElementById('wa_phone').value.trim();
-
-      // se usuário não preencheu nada, pergunta antes de abrir wa.me direto
-      if(!name && !phone){
-        const ok = confirm('Você não informou nome nem telefone. Deseja abrir o WhatsApp sem registrar o agendamento no site?');
-        if(!ok) return;
-        // abre wa.me sem registrar
-        const msg = `Olá! Gostaria de agendar um horário no dia ${displayStr}.`;
-        const url = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`;
-        window.open(url, '_blank');
-        modal.remove();
-        return;
-      }
-
-      // tenta criar agendamento no site antes de abrir WhatsApp
+    async function tryCreateBooking(name, phone){
       try{
         const form = new FormData();
-        // tenta inferir service/professional ids
-        const serviceId = sourceBtn?.getAttribute('data-service') || sourceBtn?.getAttribute('data-service-id') || window.selectedServiceId || (document.querySelector('input[name="service_id"]')?.value) || '';
-        const profId = sourceBtn?.getAttribute('data-professional') || sourceBtn?.getAttribute('data-professional-id') || window.selectedProfessionalId || (document.querySelector('input[name="professional_id"]')?.value) || '';
-
-        if(!serviceId || !profId){
-          // mesmo assim tentamos enviar sem ids (backend pode recusar)
-          console.warn('service/prof not found, sending possibly incomplete booking');
-        }
-        form.append('professional_id', profId);
-        form.append('service_id', serviceId);
+        form.append('professional_id', professionalId || '');
+        form.append('service_id', serviceId || '');
         form.append('start', startIso);
         form.append('client_name', name);
         form.append('client_phone', phone);
 
         const res = await fetch('/book/', { method:'POST', body: form });
-        if(res.ok){
-          const data = await res.json().catch(()=>({ booking: null }));
-          // abrir wa.me com dados completos
-          const message = `Olá! Gostaria de agendar um horário no dia ${displayStr}. Nome: ${name}. Telefone: ${phone}`;
-          const url = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`;
-          window.open(url, '_blank');
+        return res;
+      }catch(err){
+        console.error('create booking error', err);
+        throw err;
+      }
+    }
+
+    document.getElementById('wa_whats').addEventListener('click', async ()=>{
+      const name = document.getElementById('wa_name').value.trim();
+      const phone = document.getElementById('wa_phone').value.trim();
+
+      if(!name && !phone){
+        const ok = confirm('Você não informou nome nem telefone. Deseja abrir o WhatsApp sem registrar o agendamento no site?');
+        if(!ok) return;
+        const msg = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${displayStr}.`;
+        window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`, '_blank');
+        modal.remove();
+        return;
+      }
+
+      try{
+        const res = await tryCreateBooking(name, phone);
+        if(res && res.ok){
+          // booking criado, abrir wa.me com dados e atualizar UI
+          const message = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${displayStr}. Nome: ${name}. Telefone: ${phone}`;
+          window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
+
+          // preenche formulário central (se existir)
+          const centralName = document.querySelector('input[name="client_name"], input#id_client_name, input[placeholder*="Nome"]');
+          const centralPhone = document.querySelector('input[name="client_phone"], input#id_client_phone, input[placeholder*="Telefone"]');
+          const centralStart = document.querySelector('.confirm-start, .selected-start, #selected-start, .selected-datetime');
+          if(centralName) centralName.value = name;
+          if(centralPhone) centralPhone.value = phone;
+          if(centralStart) centralStart.innerText = displayStr;
+
           modal.remove();
-          // atualizar slots
-          refreshSlots(profId);
-        } else if(res.status === 409){
+          refreshSlots(professionalId);
+        } else if (res && res.status === 409){
           alert('Horário já reservado por outra pessoa.');
           modal.remove();
           refreshSlots();
         } else {
-          const txt = await res.text();
-          alert('Erro ao criar agendamento no site: ' + (txt || res.status));
+          const text = await res.text().catch(()=>null);
+          alert('Erro ao criar agendamento no site: ' + (text || res.status || 'erro'));
         }
       }catch(err){
-        alert('Erro ao comunicar com o servidor. Abrir WhatsApp sem registrar? (OK para abrir)');
-        const ok = confirm('Erro na criação do agendamento — deseja abrir o WhatsApp mesmo assim?');
+        const ok = confirm('Ocorreu erro ao criar reserva no site. Deseja abrir o WhatsApp mesmo assim?');
         if(ok){
-          const message = `Olá! Gostaria de agendar um horário no dia ${displayStr}. Nome: ${name}. Telefone: ${phone}`;
+          const message = `Olá! Gostaria de agendar ${serviceName || ''} no dia ${displayStr}. Nome: ${name}. Telefone: ${phone}`;
           window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
           modal.remove();
         }
       }
     });
 
-    // Handler Reservar no site: comportamento existente (obrigatório nome/telefone)
     document.getElementById('wa_book').addEventListener('click', async ()=>{
       const name = document.getElementById('wa_name').value.trim();
       const phone = document.getElementById('wa_phone').value.trim();
       if(!name || !phone){ alert('Preencha nome e telefone para reservar no site.'); return; }
 
       try{
-        const form = new FormData();
-        const serviceId = sourceBtn?.getAttribute('data-service') || sourceBtn?.getAttribute('data-service-id') || window.selectedServiceId || (document.querySelector('input[name="service_id"]')?.value) || '';
-        const profId = sourceBtn?.getAttribute('data-professional') || sourceBtn?.getAttribute('data-professional-id') || window.selectedProfessionalId || (document.querySelector('input[name="professional_id"]')?.value) || '';
-
-        form.append('professional_id', profId);
-        form.append('service_id', serviceId);
-        form.append('start', startIso);
-        form.append('client_name', name);
-        form.append('client_phone', phone);
-
-        const res = await fetch('/book/', { method:'POST', body: form });
-        if(res.ok){
+        const res = await tryCreateBooking(name, phone);
+        if(res && res.ok){
           alert('Agendamento criado no site!');
+          // preenche central
+          const centralName = document.querySelector('input[name="client_name"], input#id_client_name, input[placeholder*="Nome"]');
+          const centralPhone = document.querySelector('input[name="client_phone"], input#id_client_phone, input[placeholder*="Telefone"]');
+          const centralStart = document.querySelector('.confirm-start, .selected-start, #selected-start, .selected-datetime');
+          if(centralName) centralName.value = name;
+          if(centralPhone) centralPhone.value = phone;
+          if(centralStart) centralStart.innerText = displayStr;
+
           modal.remove();
-          refreshSlots(profId);
-        } else if (res.status === 409){
+          refreshSlots(professionalId);
+        } else if (res && res.status === 409){
           alert('Horário já reservado por outra pessoa.');
           modal.remove();
           refreshSlots();
         } else {
-          const txt = await res.text();
-          alert('Erro ao criar agendamento: ' + (txt || res.status));
+          const text = await res.text().catch(()=>null);
+          alert('Erro ao criar agendamento: ' + (text || res.status || 'erro'));
         }
       }catch(err){
-        alert('Erro ao conectar com o servidor: ' + err.message);
+        alert('Erro ao conectar com o servidor: ' + (err.message || err));
       }
     });
   }
 
-  // expor pra debug se precisar
   window.openBookingModal = openBookingModal;
 })();
 </script>
+
 
 
     <script src="https://cdn.jsdelivr.net/npm/feather-icons/dist/feather.min.js"></script>
