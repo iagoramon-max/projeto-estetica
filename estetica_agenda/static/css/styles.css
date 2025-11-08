@@ -1,0 +1,52 @@
+<!-- CSS embutido: fallback rápido enquanto o static não está servindo -->
+<style>
+/* --- estilos básicos do projeto (coloquei só o essencial) --- */
+:root{
+  --pink-500: #ec4899;
+  --pink-600: #ff3b84;
+  --bg: linear-gradient(180deg, #fffafc 0%, #fff6f8 100%);
+  --card-shadow: 0 10px 30px rgba(13,12,20,0.06);
+  --muted: #6b7280;
+}
+body{
+  background: var(--bg);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  margin:0; color:#111827; -webkit-font-smoothing:antialiased;
+}
+.main-card{
+  background:white;
+  border-radius:1.25rem;
+  box-shadow:var(--card-shadow);
+  border:1px solid rgba(0,0,0,0.03);
+}
+.card-header{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem}
+.brand{display:flex;align-items:center;gap:.75rem}
+.brand-logo{width:48px;height:48px;border-radius:12px;
+  background: linear-gradient(180deg, #ff5d9e, #ff3b84);
+  display:flex;align-items:center;justify-content:center}
+.brand-logo svg{width:26px;height:26px;fill:white}
+.whatsapp-btn{
+  background: linear-gradient(180deg, #ff5d9e, #ff3b84);
+  color: white; padding:.6rem 1rem; border-radius:.75rem;
+  box-shadow: 0 6px 18px rgba(255,93,158,0.15); text-decoration:none;
+  display:inline-block;
+}
+.content-section{margin-top:2rem}
+@media (max-width:768px){.card-header{flex-direction:column;align-items:flex-start}.whatsapp-btn{align-self:flex-end}.content-section{margin-top:1.5rem}}
+
+/* slots / times layout */
+#slots{min-height:220px;padding:1rem;border-radius:.75rem;background:#fff;border:1px solid #eef2f6}
+.slot-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem}
+.slot-button{padding:.6rem .9rem;border-radius:.5rem;border:1px solid #e6e6e9;background:white;cursor:pointer}
+.slot-button[aria-disabled="true"], .slot-button.disabled{background:#f3f4f6;color:#9ca3af;cursor:default;border-color:#e7e6e9}
+
+/* central form */
+.confirm-area .btn{padding:.55rem .9rem;border-radius:.6rem}
+.btn-primary{background:var(--pink-500);color:white;border:none}
+.btn-ghost{background:white;border:1px solid #e5e7eb;color:#111827}
+
+/* modal quick styles */
+.wa-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999}
+.wa-modal{background:white;border-radius:12px;padding:18px;width:94%;max-width:420px;box-shadow:0 10px 40px rgba(0,0,0,0.12)}
+.wa-input{width:100%;padding:.6rem;border-radius:.5rem;border:1px solid #e5e7eb;margin-bottom:.75rem}
+</style>
