@@ -1,6 +1,7 @@
 {% extends 'agendamentos/base.html' %}
 {% block content %}
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+  <!-- COLUNA ESQUERDA: Serviços (APENAS serviços) -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Serviços</h2>
     <div class="space-y-3" id="services-list">
@@ -15,16 +16,9 @@
       </label>
       {% endfor %}
     </div>
-
-    <div class="mt-6">
-      <h3 class="font-semibold mb-2">Horários</h3>
-      <div id="slots" class="min-h-[220px] p-3 border rounded-lg bg-white">
-        <div class="text-sm text-gray-400">Escolha um serviço e um dia para ver horários.</div>
-      </div>
-    </div>
   </section>
 
-  <!-- Calendário em grade 7 colunas (sem badge) -->
+  <!-- COLUNA DO MEIO: Calendário -->
   <section class="p-4">
     <h2 class="font-semibold text-lg mb-4">Escolha o dia</h2>
     <div class="grid grid-cols-7 gap-2" id="days-grid">
@@ -37,13 +31,15 @@
         </button>
       {% endfor %}
     </div>
+
+    <!-- Opcional: área de confirmação central REMOVIDA (não duplicar) -->
   </section>
 
-  <!-- Coluna direita: instruções / informações -->
+  <!-- COLUNA DIREITA: Horários (moved here) -->
   <section class="p-4">
-    <h2 class="font-semibold text-lg mb-4">Informações</h2>
-    <div class="p-4 border rounded-lg bg-white text-sm text-gray-600">
-      Use o calendário e os horários para selecionar um slot. Clique no horário para abrir o modal rápido (preencha nome e telefone). Você pode escolher "Agendar via WhatsApp" (abre wa.me) ou "Reservar no site".
+    <h2 class="font-semibold text-lg mb-4">Horários</h2>
+    <div id="slots" class="min-h-[220px] p-3 border rounded-lg bg-white">
+      <div class="text-sm text-gray-400">Escolha um serviço e um dia para ver horários.</div>
     </div>
   </section>
 </div>
