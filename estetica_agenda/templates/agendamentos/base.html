@@ -90,10 +90,11 @@
     </footer>
 
     <!-- Script: captura cliques em botões de horário e abre modal -->
-   <script>
+  <script>
 (function(){
   const WA_NUMBER = "5512991613940";
 
+  /* ---- helpers ---- */
   function showTemporaryMessage(text, colorClass = "bg-green-500") {
     const msg = document.createElement("div");
     msg.textContent = text;
@@ -108,30 +109,63 @@
     return null;
   }
 
+  function resetCentralFormAndSelection(){
+    // limpar campos centrais
+    const centralName = document.querySelector('input[name="client_name"], input#id_client_name, input[placeholder*="Nome"]');
+    const centralPhone = document.querySelector('input[name="client_phone"], input#id_client_phone, input[placeholder*="Telefone"]');
+    if(centralName) centralName.value = '';
+    if(centralPhone) centralPhone.value = '';
+
+    // limpar texto do horário selecionado central (se existir)
+    const centralStart = document.querySelector('.confirm-start, .selected-start, #selected-start, .selected-datetime, .confirm-datetime');
+    if(centralStart) centralStart.innerText = '';
+
+    // remover seleção visual nos dias
+    document.querySelectorAll('#days-grid button.selected, #days-grid button.active, #days-grid button[aria-pressed="true"]').forEach(b=>{
+      b.classList.remove('selected','active');
+      b.removeAttribute('aria-pressed');
+    });
+
+    // remover seleção visual nos horários (botões com data-start)
+    document.querySelectorAll('[data-start].slot-selected, [data-start].active').forEach(b=>{
+      b.classList.remove('slot-selected','active');
+    });
+  }
+
   function refreshSlots(profId){
-    if(typeof fetchSlots === 'function' && window.selectedDayIso && window.selectedServiceId){
-      fetchSlots(window.selectedDayIso, window.selectedServiceId, profId || null);
+    // tenta chamar a função fetchSlots definida no index.js (se existir)
+    if(typeof fetchSlots === 'function' && (window.selectedDayIso || getSelectedDayIso()) && window.selectedServiceId){
+      const dayIso = window.selectedDayIso || getSelectedDayIso();
+      fetchSlots(dayIso, window.selectedServiceId, profId || null);
       return;
     }
-    const sel = document.querySelector('#days-grid button[aria-pressed="true"], #days-grid button.active, #days-grid button.selected');
-    if(sel) { sel.click(); return; }
+    // se não existir fetchSlots, tenta clicar no botão já presente
+    const sel = document.querySelector('#days-grid button[aria-pressed="true"], #days-grid button.active, #days-grid button.selected') ||
+                document.querySelector('#days-grid button[data-iso]');
+    if(sel){ sel.click(); return; }
+    // fallback
     location.reload();
   }
 
+  /* ---- captura clique em slot (delegation) ---- */
   document.addEventListener('click', function(e){
+    // botão com data-start (slots gerados pelo partial)
     const btn = e.target.closest('[data-start]');
     if(!btn) return;
 
-    const startIso = btn.dataset.start;
-    const display = btn.dataset.display;
-    const serviceName = btn.dataset.serviceName || '';
-    const serviceId = btn.dataset.serviceId || '';
-    const professionalId = btn.dataset.professional || '';
+    const startIso = btn.dataset.start || btn.getAttribute('data-start');
+    const display = btn.dataset.display || btn.getAttribute('data-display') || btn.innerText.trim();
+    const serviceName = btn.dataset.serviceName || btn.getAttribute('data-service-name') || (document.querySelector('.service-item .font-medium')?.innerText || '');
+    const serviceId = btn.dataset.serviceId || btn.getAttribute('data-service-id') || window.selectedServiceId || document.querySelector('input[name="service_id"]')?.value || '';
+    const professionalId = btn.dataset.professional || btn.getAttribute('data-professional') || window.selectedProfessionalId || document.querySelector('input[name="professional_id"]')?.value || '';
 
     openBookingModal(startIso, display, serviceName, serviceId, professionalId);
   });
 
+
+  /* ---- modal + ações ---- */
   function openBookingModal(startIso, displayStr, serviceName, serviceId, professionalId){
+    // remove modal antigo
     const old = document.getElementById('wa-modal-wrap'); if(old) old.remove();
 
     const modal = document.createElement('div');
@@ -147,7 +181,8 @@
           <button id="wa_whats" class="btn btn-primary">Agendar via WhatsApp</button>
           <button id="wa_book" class="btn" style="background:#10B981;color:white;">Reservar no site</button>
         </div>
-      </div>`;
+      </div>
+    `;
     document.body.appendChild(modal);
 
     document.getElementById('wa_cancel').addEventListener('click', ()=> modal.remove());
@@ -162,53 +197,83 @@
       return await fetch('/book/', { method:'POST', body: form });
     }
 
+    // WHATSAPP: tenta criar booking e abre wa.me; atualiza UI
     document.getElementById('wa_whats').addEventListener('click', async ()=>{
       const name = document.getElementById('wa_name').value.trim();
       const phone = document.getElementById('wa_phone').value.trim();
 
+      // se sem dados, confirma abertura do wa.me sem registrar
+      if(!name && !phone){
+        const ok = confirm('Abrir WhatsApp sem registrar no site? (não bloqueará horário no site)');
+        if(!ok) return;
+        const msg = `Olá! Gostaria de agendar ${serviceName} no dia ${displayStr}.`;
+        window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`, '_blank');
+        modal.remove();
+        return;
+      }
+
       try{
         const res = await createBooking(name, phone);
-        if(res.ok){
+        if(res && res.ok){
+          // sucesso: bloqueia slot, mostra mensagem e abre wa.me
+          resetCentralFormAndSelection();
           showTemporaryMessage("Continue no WhatsApp para finalizar o agendamento", "bg-pink-500");
           modal.remove();
-          const msg = `Olá! Gostaria de agendar ${serviceName} no dia ${displayStr}. Nome: ${name}. Telefone: ${phone}`;
-          window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(msg)}`, '_blank');
+
+          const message = `Olá! Gostaria de agendar ${serviceName} no dia ${displayStr}. Nome: ${name}. Telefone: ${phone}`;
+          window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
+
           refreshSlots(professionalId);
-        } else if(res.status === 409){
-          alert('Horário já reservado');
+        } else if(res && res.status === 409){
+          alert('Horário já reservado por outra pessoa.');
           modal.remove();
           refreshSlots(professionalId);
         } else {
-          alert('Erro ao criar reserva no site.');
+          const txt = await (res.text().catch(()=>null));
+          alert('Erro ao criar reserva no site: ' + (txt || res.status || 'erro'));
         }
       }catch(err){
-        alert('Falha de conexão.');
+        const ok = confirm('Erro ao criar reserva no site. Deseja abrir o WhatsApp mesmo assim?');
+        if(ok){
+          const message = `Olá! Gostaria de agendar ${serviceName} no dia ${displayStr}. Nome: ${name}. Telefone: ${phone}`;
+          window.open(`https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
+          modal.remove();
+        }
       }
     });
 
+    // RESERVAR NO SITE (sem abrir WhatsApp)
     document.getElementById('wa_book').addEventListener('click', async ()=>{
       const name = document.getElementById('wa_name').value.trim();
       const phone = document.getElementById('wa_phone').value.trim();
-      if(!name || !phone){ alert('Preencha nome e telefone.'); return; }
+      if(!name || !phone){ alert('Preencha nome e telefone para reservar no site.'); return; }
 
       try{
         const res = await createBooking(name, phone);
-        if(res.ok){
+        if(res && res.ok){
+          // sucesso: limpar form central, mostrar toast, atualizar slots
+          resetCentralFormAndSelection();
           showTemporaryMessage("Agendamento registrado com sucesso!", "bg-green-500");
           modal.remove();
           refreshSlots(professionalId);
-        } else if(res.status === 409){
-          alert('Horário já reservado.');
+        } else if(res && res.status === 409){
+          alert('Horário já reservado por outra pessoa.');
           modal.remove();
           refreshSlots(professionalId);
         } else {
-          alert('Erro ao criar reserva.');
+          const txt = await (res.text().catch(()=>null));
+          alert('Erro ao criar reserva: ' + (txt || res.status || 'erro'));
         }
       }catch(err){
-        alert('Erro de conexão.');
+        alert('Falha na conexão: ' + (err.message || err));
       }
     });
-  }
+
+  } // end openBookingModal
+
+  // expor para debug (opcional)
+  window.openBookingModal = openBookingModal;
+  window.refreshSlots = refreshSlots;
 
 })();
 </script>
